@@ -18,6 +18,8 @@ _VERSION_STATEPOINT = 18
 
 
 KineticsParameters = namedtuple("KineticsParameters", ["generation_time", "beta_effective"])
+KeffSensitivities = namedtuple(
+    "KeffSensitivities", ["energies", "coefficients"])
 
 
 class StatePoint:
@@ -779,3 +781,89 @@ class StatePoint:
                 beta_effective = beta_effective[0]
 
         return KineticsParameters(generation_time, beta_effective)
+
+    def get_keff_sensitivities(self) -> KeffSensitivities:
+        """Get sensitivity coefficients of k-effective to nuclear data.
+
+        This method searches the statepoint for the tallies added by
+        :meth:`openmc.Model.add_keff_sensitivity_tallies` and computes the
+        relative sensitivity coefficients :math:`S = (\\delta k / k) / (\\delta
+        x / x)` for each perturbed nuclide, nuclear data, and energy group.
+
+        In addition to the perturbed nuclear data tallied, the following
+        combined sensitivities are returned when their components are
+        available: 'scatter' (elastic + inelastic), 'total' (elastic +
+        inelastic + capture + fission), and 'nu' (nu-prompt + nu-delayed). For
+        the fission spectrum, 'chi-prompt' and 'chi-delayed' are unconstrained
+        sensitivities, while 'chi-prompt-constrained' and
+        'chi-delayed-constrained' preserve the normalization of the spectrum
+        using the energy-averaged spectrum of each nuclide in the problem.
+
+        Uncertainties of combined sensitivities assume that the tallied bins
+        are uncorrelated.
+
+        .. versionadded:: 0.16.1
+
+        Returns
+        -------
+        KeffSensitivities
+            A named tuple containing the energy group boundaries in [eV] and a
+            dictionary mapping (nuclide, reaction) to an array of sensitivity
+            coefficients per energy group with associated uncertainties.
+
+        """
+        sens_tally = None
+        denom_tally = None
+        spectrum_tally = None
+        for tally in self.tallies.values():
+            if 'keff-sensitivity-numerator' in tally.scores:
+                if sens_tally is not None:
+                    raise ValueError(
+                        'Multiple k-eff sensitivity tallies found.')
+                sens_tally = tally
+            elif 'ifp-denominator' in tally.scores:
+                denom_tally = tally
+            elif tally.name == 'k-eff sensitivity spectrum':
+                spectrum_tally = tally
+        if sens_tally is None or denom_tally is None:
+            raise LookupError('Could not find the tallies needed to compute '
+                              'k-eff sensitivity coefficients.')
+
+        sens_filter = sens_tally.find_filter(openmc.SensitivityFilter)
+        numerator = uarray(sens_tally.mean.ravel(), sens_tally.std_dev.ravel())
+        denominator = ufloat(denom_tally.mean.ravel()[0],
+                             denom_tally.std_dev.ravel()[0])
+        values = (numerator / denominator).reshape(sens_filter.shape)
+
+        coefficients = {}
+        for i, nuc in enumerate(sens_filter.nuclides):
+            for j, rx in enumerate(sens_filter.reactions):
+                coefficients[nuc, rx] = values[i, j]
+
+            def combine(name, components):
+                if all((nuc, c) in coefficients for c in components):
+                    coefficients[nuc, name] = sum(
+                        coefficients[nuc, c] for c in components)
+
+            combine('scatter', ('elastic', 'inelastic'))
+            combine('total', ('elastic', 'inelastic', 'capture', 'fission'))
+            combine('nu', ('nu-prompt', 'nu-delayed'))
+
+            # Constrain fission spectrum sensitivities so that the perturbed
+            # spectrum remains normalized
+            if spectrum_tally is None:
+                continue
+            for chi, score in (('chi-prompt', 'prompt-nu-fission'),
+                               ('chi-delayed', 'delayed-nu-fission')):
+                if (nuc, chi) not in coefficients:
+                    continue
+                production = spectrum_tally.get_values(
+                    scores=[score], nuclides=[nuc]).ravel()
+                if production.sum() <= 0.0:
+                    continue
+                spectrum = production / production.sum()
+                unconstrained = coefficients[nuc, chi]
+                coefficients[nuc, f'{chi}-constrained'] = (
+                    unconstrained - spectrum * unconstrained.sum())
+
+        return KeffSensitivities(sens_filter.energies, coefficients)

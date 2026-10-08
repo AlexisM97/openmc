@@ -23,9 +23,9 @@ __all__ = [
     'MaterialFilter', 'MaterialFromFilter', 'MeshFilter', 'MeshBornFilter',
     'MeshMaterialFilter', 'MeshSurfaceFilter', 'MuFilter', 'MuSurfaceFilter',
     'ParentNuclideFilter', 'ParticleFilter', 'ParticleProductionFilter', 'PolarFilter',
-    'ReactionFilter', 'SphericalHarmonicsFilter', 'SpatialLegendreFilter',
-    'SurfaceFilter', 'TimeFilter', 'UniverseFilter', 'WeightFilter', 'ZernikeFilter',
-    'ZernikeRadialFilter', 'filters'
+    'ReactionFilter', 'SensitivityFilter', 'SphericalHarmonicsFilter',
+    'SpatialLegendreFilter', 'SurfaceFilter', 'TimeFilter', 'UniverseFilter',
+    'WeightFilter', 'ZernikeFilter', 'ZernikeRadialFilter', 'filters'
 ]
 
 # Tally functions
@@ -632,6 +632,16 @@ class ReactionFilter(Filter):
     filter_type = 'reaction'
 
 
+class SensitivityFilter(Filter):
+    """Filter sensitivity coefficients by nuclide, nuclear data, and energy.
+
+    .. versionadded:: 0.16.1
+
+    """
+
+    filter_type = 'sensitivity'
+
+
 class SphericalHarmonicsFilter(Filter):
     filter_type = 'sphericalharmonics'
 
@@ -735,6 +745,7 @@ _FILTER_TYPE_MAP = {
     'particleproduction': ParticleProductionFilter,
     'polar': PolarFilter,
     'reaction': ReactionFilter,
+    'sensitivity': SensitivityFilter,
     'sphericalharmonics': SphericalHarmonicsFilter,
     'spatiallegendre': SpatialLegendreFilter,
     'surface': SurfaceFilter,

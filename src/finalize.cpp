@@ -21,6 +21,7 @@
 #include "openmc/plot.h"
 #include "openmc/random_lcg.h"
 #include "openmc/random_ray/random_ray_simulation.h"
+#include "openmc/sensitivity.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/source.h"
@@ -56,6 +57,7 @@ void free_memory()
   free_memory_mesh();
   free_memory_tally();
   free_memory_bank();
+  free_memory_sensitivity();
   free_memory_plot();
   free_memory_weight_windows();
   if (mpi::master) {

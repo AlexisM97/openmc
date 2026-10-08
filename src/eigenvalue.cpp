@@ -14,6 +14,7 @@
 #include "openmc/message_passing.h"
 #include "openmc/random_lcg.h"
 #include "openmc/search.h"
+#include "openmc/sensitivity.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/tallies/tally.h"
@@ -168,6 +169,9 @@ void synchronize_bank()
       copy_ifp_data_from_fission_banks(
         idx, index_temp, temp_delayed_groups, temp_lifetimes);
     }
+    if (settings::sensitivity_on) {
+      copy_sensitivity_from_fission_bank(idx, index_temp);
+    }
     ++index_temp;
 
     // Next tooth
@@ -218,6 +222,10 @@ void synchronize_bank()
   vector<int> send_delayed_groups;
   vector<double> send_lifetimes;
 
+  // Ranges of sites whose sensitivity chains are sent and received
+  vector<SensitivityTransfer> sensitivity_sends;
+  vector<SensitivityTransfer> sensitivity_recvs;
+
   if (start < settings::n_particles) {
     // Determine the index of the processor which has the first part of the
     // source_bank for the local processor
@@ -251,6 +259,9 @@ void synchronize_bank()
           if (settings::ifp_lifetime_on)
             send_ifp_info(index_local, n, ifp_n_generation, neighbor, requests,
               temp_lifetimes, send_lifetimes);
+        }
+        if (settings::sensitivity_on) {
+          sensitivity_sends.push_back({neighbor, index_local, n});
         }
       }
 
@@ -323,6 +334,9 @@ void synchronize_bank()
           receive_ifp_data(index_local, n, ifp_n_generation, neighbor, requests,
             recv_lifetimes, deserialization_info);
       }
+      if (settings::sensitivity_on) {
+        sensitivity_recvs.push_back({neighbor, index_local, n});
+      }
 
     } else {
       // If the source sites are on this processor, we can simply copy them
@@ -335,6 +349,9 @@ void synchronize_bank()
       if (settings::ifp_on()) {
         copy_partial_ifp_data_to_source_banks(
           index_temp, n, index_local, temp_delayed_groups, temp_lifetimes);
+      }
+      if (settings::sensitivity_on) {
+        move_sensitivity_to_source_bank(index_temp, n, index_local);
       }
     }
 
@@ -360,11 +377,18 @@ void synchronize_bank()
         simulation::ifp_source_lifetime_bank, deserialization_info);
   }
 
+  if (settings::sensitivity_on) {
+    exchange_sensitivity_chains(sensitivity_sends, sensitivity_recvs);
+  }
+
 #else
   std::copy(temp_sites.data(), temp_sites.data() + settings::n_particles,
     simulation::source_bank.begin());
   if (settings::ifp_on()) {
     copy_complete_ifp_data_to_source_banks(temp_delayed_groups, temp_lifetimes);
+  }
+  if (settings::sensitivity_on) {
+    move_sensitivity_to_source_bank(0, settings::n_particles, 0);
   }
 #endif
 

@@ -18,6 +18,7 @@
 #include "openmc/photon.h"
 #include "openmc/random_lcg.h"
 #include "openmc/random_ray/flat_source_domain.h"
+#include "openmc/sensitivity.h"
 #include "openmc/settings.h"
 #include "openmc/source.h"
 #include "openmc/state_point.h"
@@ -462,6 +463,12 @@ void allocate_banks()
     if (settings::ifp_on()) {
       resize_simulation_ifp_banks();
     }
+
+    // Allocate sensitivity banks
+    if (settings::sensitivity_on) {
+      initialize_sensitivity();
+      resize_sensitivity_banks();
+    }
   }
 
   if (settings::surf_source_write) {
@@ -730,6 +737,9 @@ void initialize_particle_track(
 
   // Reset split counter
   p.n_split() = 0;
+
+  // Discard sensitivity events saved for secondaries of a previous history
+  p.sensitivity_secondaries().clear();
 
   // Reset weight window ratio
   p.ww_factor() = 0.0;

@@ -300,7 +300,9 @@ ignored for all run modes other than "eigenvalue".
 ------------------------------
 
 The ``<ifp_n_generation>`` element indicates the number of generations to
-consider for the Iterated Fission Probability method.
+consider for the Iterated Fission Probability method. This is also the number
+of generations used to estimate the importance of neutrons for sensitivity
+coefficients.
 
   *Default*: 10
 

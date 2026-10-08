@@ -28,6 +28,7 @@ _FILTER_TYPES = (
     'spatiallegendre', 'sphericalharmonics', 'zernike', 'zernikeradial', 'particle',
     'particleproduction', 'cellinstance', 'collision', 'time', 'parentnuclide',
     'weight', 'meshborn', 'meshsurface', 'meshmaterial', 'reaction',
+    'sensitivity',
 )
 
 def _mesh_current_names(mesh):
@@ -2009,6 +2010,215 @@ class ParticleProductionFilter(Filter):
                 energy_pairs[:, 0], stride, data_size)
             filter_dict[key, 'energy high [eV]'] = _repeat_and_tile(
                 energy_pairs[:, 1], stride, data_size)
+
+        return pd.DataFrame(filter_dict)
+
+
+class SensitivityFilter(Filter):
+    """Bins sensitivity coefficients by perturbed nuclide, nuclear data, and
+    energy group.
+
+    This filter must be used on its own in a tally with the
+    ``keff-sensitivity-numerator`` score. Rather than binning the tally event
+    itself, it bins the events recorded in the ancestry of the neutron that
+    contributes to the tally. Bins are ordered with the nuclide varying slowest
+    and the energy group varying fastest.
+
+    .. versionadded:: 0.16.1
+
+    Parameters
+    ----------
+    nuclides : str or iterable of str
+        Names of the perturbed nuclides (e.g., 'U235')
+    reactions : str or iterable of str
+        Perturbed nuclear data. Valid values are listed in
+        :attr:`SensitivityFilter.REACTIONS`. The 'chi-prompt' and 'chi-delayed'
+        values correspond to unconstrained perturbations of the fission
+        spectrum in the outgoing energy group.
+    energies : Iterable of Real or str
+        A list of energy boundaries in [eV]; each successive pair defines a
+        group. Alternatively, the name of the group structure can be given as a
+        string (must be a key in :data:`openmc.mgxs.GROUP_STRUCTURES`).
+    filter_id : int, optional
+        Unique identifier for the filter
+
+    Attributes
+    ----------
+    nuclides : list of str
+        Names of the perturbed nuclides
+    reactions : list of str
+        Perturbed nuclear data
+    energies : numpy.ndarray
+        Energy group boundaries in [eV]
+    bins : list of tuple
+        A list of bins; each element is a tuple ``(nuclide, reaction,
+        energy_low, energy_high)``
+    num_bins : int
+        Total number of filter bins
+    shape : tuple of int
+        Shape of the filter as (n_nuclides, n_reactions, n_groups)
+
+    """
+
+    REACTIONS = ('elastic', 'inelastic', 'capture', 'fission', 'nu-prompt',
+                 'nu-delayed', 'chi-prompt', 'chi-delayed')
+
+    def __init__(self, nuclides, reactions, energies, filter_id=None):
+        self.nuclides = nuclides
+        self.reactions = reactions
+        self.energies = energies
+        self.id = filter_id
+
+    def __repr__(self):
+        string = type(self).__name__ + '\n'
+        string += '{: <16}=\t{}\n'.format('\tNuclides', self.nuclides)
+        string += '{: <16}=\t{}\n'.format('\tReactions', self.reactions)
+        string += '{: <16}=\t{}\n'.format('\tEnergies', self.energies)
+        string += '{: <16}=\t{}\n'.format('\tID', self.id)
+        return string
+
+    @property
+    def nuclides(self):
+        return self._nuclides
+
+    @nuclides.setter
+    def nuclides(self, nuclides):
+        if isinstance(nuclides, str):
+            nuclides = [nuclides]
+        cv.check_iterable_type('nuclides', nuclides, str)
+        if len(set(nuclides)) != len(nuclides):
+            raise ValueError(
+                'Nuclides on a sensitivity filter must be unique.')
+        self._nuclides = list(nuclides)
+
+    @property
+    def reactions(self):
+        return self._reactions
+
+    @reactions.setter
+    def reactions(self, reactions):
+        if isinstance(reactions, str):
+            reactions = [reactions]
+        cv.check_iterable_type('reactions', reactions, str)
+        for rx in reactions:
+            cv.check_value('reaction', rx, self.REACTIONS)
+        if len(set(reactions)) != len(reactions):
+            raise ValueError(
+                'Reactions on a sensitivity filter must be unique.')
+        self._reactions = list(reactions)
+
+    @property
+    def energies(self):
+        return self._energies
+
+    @energies.setter
+    def energies(self, energies):
+        if isinstance(energies, str):
+            cv.check_value('energies', energies,
+                           openmc.mgxs.GROUP_STRUCTURES.keys())
+            energies = openmc.mgxs.GROUP_STRUCTURES[energies.upper()]
+        energies = np.asarray(energies, dtype=float)
+        cv.check_length('energies', energies, 2)
+        if np.any(np.diff(energies) <= 0.0):
+            raise ValueError("Energy bins must be monotonically increasing.")
+        self._energies = energies
+
+    @property
+    def num_groups(self):
+        return len(self.energies) - 1
+
+    @property
+    def bins(self):
+        energy_pairs = np.vstack((self.energies[:-1], self.energies[1:])).T
+        return [(nuc, rx, e_low, e_high)
+                for nuc, rx, (e_low, e_high) in product(
+                    self.nuclides, self.reactions, energy_pairs)]
+
+    @bins.setter
+    def bins(self, bins):
+        # bins is set indirectly through nuclides/reactions/energies
+        pass
+
+    @property
+    def num_bins(self):
+        return len(self.nuclides) * len(self.reactions) * self.num_groups
+
+    @property
+    def shape(self):
+        return (len(self.nuclides), len(self.reactions), self.num_groups)
+
+    def can_merge(self, other):
+        # Bins are the product of nuclides, reactions, and energy groups, so
+        # they cannot be merged by concatenation
+        return False
+
+    def to_xml_element(self):
+        element = ET.Element('filter')
+        element.set('id', str(self.id))
+        element.set('type', self.short_name.lower())
+
+        subelement = ET.SubElement(element, 'nuclides')
+        subelement.text = ' '.join(self.nuclides)
+        subelement = ET.SubElement(element, 'reactions')
+        subelement.text = ' '.join(self.reactions)
+        subelement = ET.SubElement(element, 'energies')
+        subelement.text = ' '.join(str(e) for e in self.energies)
+        return element
+
+    @classmethod
+    def from_xml_element(cls, elem, **kwargs):
+        filter_id = int(elem.get('id'))
+        nuclides = get_text(elem, 'nuclides').split()
+        reactions = get_text(elem, 'reactions').split()
+        energies = [float(x) for x in get_text(elem, 'energies').split()]
+        return cls(nuclides, reactions, energies, filter_id=filter_id)
+
+    @classmethod
+    def from_hdf5(cls, group, **kwargs):
+        filter_id = int(group.name.split('/')[-1].lstrip('filter '))
+        nuclides = [b.decode() for b in group['nuclides'][()]]
+        reactions = [b.decode() for b in group['reactions'][()]]
+        energies = group['energies'][()]
+        return cls(nuclides, reactions, energies, filter_id=filter_id)
+
+    def get_pandas_dataframe(self, data_size, stride, **kwargs):
+        """Builds a Pandas DataFrame for the Filter's bins.
+
+        This method constructs a Pandas DataFrame object for the filter with
+        columns annotated by filter bin information. This is a helper method for
+        :meth:`Tally.get_pandas_dataframe`.
+
+        Parameters
+        ----------
+        data_size : int
+            The total number of bins in the tally corresponding to this filter
+        stride : int
+            Stride in memory for the filter
+
+        Returns
+        -------
+        pandas.DataFrame
+            A Pandas DataFrame with columns for the perturbed nuclide, the
+            perturbed nuclear data, and the energy group boundaries.
+
+        See also
+        --------
+        Tally.get_pandas_dataframe(), CrossFilter.get_pandas_dataframe()
+
+        """
+        filter_dict = {}
+        key = self.short_name.lower()
+        n_groups = self.num_groups
+        n_rx = len(self.reactions)
+
+        filter_dict[key, 'nuclide'] = _repeat_and_tile(
+            np.array(self.nuclides), n_rx * n_groups * stride, data_size)
+        filter_dict[key, 'reaction'] = _repeat_and_tile(
+            np.array(self.reactions), n_groups * stride, data_size)
+        filter_dict[key, 'energy low [eV]'] = _repeat_and_tile(
+            self.energies[:-1], stride, data_size)
+        filter_dict[key, 'energy high [eV]'] = _repeat_and_tile(
+            self.energies[1:], stride, data_size)
 
         return pd.DataFrame(filter_dict)
 

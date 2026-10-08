@@ -144,7 +144,7 @@ attributes/sub-elements:
     The type of the filter. Accepted options are "cell", "cellfrom",
     "cellborn", "surface", "material", "universe", "energy", "energyout",
     "mu", "polar", "azimuthal", "mesh", "distribcell", "delayedgroup",
-    "energyfunction", "particle", and "particleproduction".
+    "energyfunction", "particle", "particleproduction", and "sensitivity".
 
   :bins:
      A description of the bins for each type of filter can be found in
@@ -345,6 +345,36 @@ should be set to:
       <filter id="1" type="particleproduction">
         <particles>photon neutron</particles>
         <energies>0.0 1.0e5 1.0e6 20.0e6</energies>
+      </filter>
+
+:sensitivity:
+  This filter bins sensitivity coefficients by perturbed nuclide, perturbed
+  nuclear data, and energy group. It must be the only filter of a tally with the
+  ``keff-sensitivity-numerator`` score. Bins are ordered with the nuclide
+  varying slowest and the energy group varying fastest.
+
+  The filter uses the following sub-elements instead of ``bins``:
+
+  :nuclides:
+    A space-separated list of perturbed nuclides (e.g., ``U235 U238``).
+
+  :reactions:
+    A space-separated list of perturbed nuclear data. Accepted values are
+    ``elastic``, ``inelastic``, ``capture``, ``fission``, ``nu-prompt``,
+    ``nu-delayed``, ``chi-prompt``, and ``chi-delayed``.
+
+  :energies:
+    A monotonically increasing list of energy group boundaries in [eV].
+
+  For example, to tally the sensitivity to the U235 fission cross section and
+  prompt fission neutron multiplicity in three groups:
+
+  .. code-block:: xml
+
+      <filter id="1" type="sensitivity">
+        <nuclides>U235</nuclides>
+        <reactions>fission nu-prompt</reactions>
+        <energies>1.0e-5 0.625 1.0e5 20.0e6</energies>
       </filter>
 
 ------------------

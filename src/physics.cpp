@@ -21,6 +21,7 @@
 #include "openmc/reaction.h"
 #include "openmc/search.h"
 #include "openmc/secondary_uncorrelated.h"
+#include "openmc/sensitivity.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/string_utils.h"
@@ -252,6 +253,10 @@ void create_fission_sites(Particle& p, int i_nuclide, const Reaction& rx)
       // Iterated Fission Probability (IFP) method
       if (settings::ifp_on()) {
         ifp(p, idx);
+      }
+      // Ancestor events for sensitivity coefficients
+      if (settings::sensitivity_on) {
+        bank_sensitivity_fission_site(p, i_nuclide, site, idx);
       }
     } else {
       site.wgt_born = p.wgt_born();
@@ -733,6 +738,11 @@ void scatter(Particle& p, int i_nuclide)
     // Determine temperature
     double kT = nuc->multipole_ ? p.sqrtkT() * p.sqrtkT() : nuc->kTs_[i_temp];
 
+    if (settings::sensitivity_on) {
+      record_sensitivity_event(
+        p, i_nuclide, SensitivityReaction::ELASTIC, p.E(), 1);
+    }
+
     // Perform collision physics for elastic scattering
     elastic_scatter(i_nuclide, *nuc->reactions_[0], kT, p);
 
@@ -744,6 +754,11 @@ void scatter(Particle& p, int i_nuclide)
   if (prob > cutoff && !sampled) {
     // =======================================================================
     // S(A,B) SCATTERING
+
+    if (settings::sensitivity_on) {
+      record_sensitivity_event(
+        p, i_nuclide, SensitivityReaction::ELASTIC, p.E(), 1);
+    }
 
     sab_scatter(i_nuclide, micro.index_sab, p);
 
@@ -762,6 +777,13 @@ void scatter(Particle& p, int i_nuclide)
 
       // add to cumulative probability
       prob += nuc->reactions_[i]->xs(micro);
+    }
+
+    // Record the event before secondary neutrons are created so that they
+    // inherit it
+    if (settings::sensitivity_on) {
+      record_sensitivity_event(
+        p, i_nuclide, SensitivityReaction::INELASTIC, p.E(), 1);
     }
 
     // Perform collision physics for inelastic scattering

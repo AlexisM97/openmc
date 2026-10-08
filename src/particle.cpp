@@ -24,6 +24,7 @@
 #include "openmc/physics.h"
 #include "openmc/physics_mg.h"
 #include "openmc/random_lcg.h"
+#include "openmc/sensitivity.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/source.h"
@@ -116,6 +117,9 @@ bool Particle::create_secondary(
   bank.n_split = n_split();
 
   local_secondary_bank().emplace_back(bank);
+  if (settings::sensitivity_on && type.is_neutron()) {
+    save_sensitivity_secondary(*this);
+  }
   return true;
 }
 
@@ -147,6 +151,9 @@ void Particle::split(double wgt)
   }
 
   local_secondary_bank().emplace_back(bank);
+  if (settings::sensitivity_on && type().is_neutron()) {
+    save_sensitivity_secondary(*this);
+  }
 }
 
 void Particle::from_source(const SourceSite* src)
@@ -160,6 +167,7 @@ void Particle::from_source(const SourceSite* src)
   fission() = false;
   zero_flux_derivs();
   lifetime() = 0.0;
+  sensitivity_events().clear();
 #ifdef OPENMC_DAGMC_ENABLED
   history().reset();
 #endif
@@ -322,6 +330,11 @@ void Particle::event_advance()
   // Score flux derivative accumulators for differential tallies.
   if (!model::active_tallies.empty()) {
     score_track_derivative(*this, distance);
+  }
+
+  // Sample sensitivity events for the non-collision probability
+  if (settings::sensitivity_on && type().is_neutron()) {
+    sample_sensitivity_flight(*this, distance);
   }
 
   // Set particle weight to zero if it hit the time boundary
@@ -503,6 +516,9 @@ void Particle::event_revive_from_secondary(const SourceSite& site)
   }
 
   from_source(&site);
+  if (settings::sensitivity_on) {
+    restore_sensitivity_secondary(*this);
+  }
 
   n_event() = 0;
   if (!settings::use_shared_secondary_bank) {

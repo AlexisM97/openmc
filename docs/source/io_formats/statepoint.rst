@@ -122,11 +122,18 @@ The current version of the statepoint file format is 18.2.
 :Datasets: - **type** (*char[]*) -- Type of the j-th filter. Can be 'universe',
              'material', 'cell', 'cellborn', 'surface', 'mesh', 'energy',
              'energyout', 'distribcell', 'mu', 'polar', 'azimuthal',
-             'delayedgroup', or 'energyfunction'.
+             'delayedgroup', 'energyfunction', or 'sensitivity'.
            - **n_bins** (*int*) -- Number of bins for the j-th filter. Not
              present for 'energyfunction' filters.
            - **bins** (*int[]* or *double[]*) -- Value for each filter bin of
-             this type. Not present for 'energyfunction' filters.
+             this type. Not present for 'energyfunction' or 'sensitivity'
+             filters.
+           - **nuclides** (*char[][]*) -- Perturbed nuclides. Only used for
+             'sensitivity' filters.
+           - **reactions** (*char[][]*) -- Perturbed nuclear data. Only used
+             for 'sensitivity' filters.
+           - **energies** (*double[]*) -- Energy group boundaries. Only used
+             for 'sensitivity' filters.
            - **energy** (*double[]*) -- Energy grid points for energyfunction
              interpolation. Only used for 'energyfunction' filters.
            - **y** (*double[]*) -- Interpolant values for energyfunction

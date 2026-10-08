@@ -323,6 +323,64 @@ class Model:
             denom_tally.scores = ['ifp-denominator']
             self.tallies.append(denom_tally)
 
+    def add_keff_sensitivity_tallies(
+        self,
+        nuclides: str | Sequence[str],
+        energies: Sequence[float] | str,
+        reactions: Sequence[str] | None = None,
+    ):
+        """Add tallies for calculating k-effective sensitivity coefficients.
+
+        This method adds the tallies needed to compute the sensitivity of
+        k-effective to nuclear data using the collision history-based method
+        with the iterated fission probability (IFP) method. After a model is
+        run, the sensitivity coefficients can be determined through the
+        :meth:`openmc.StatePoint.get_keff_sensitivities` method.
+
+        .. versionadded:: 0.16.1
+
+        Parameters
+        ----------
+        nuclides : str or iterable of str
+            Names of the perturbed nuclides
+        energies : iterable of float or str
+            Energy group boundaries in [eV] or the name of a group structure in
+            :data:`openmc.mgxs.GROUP_STRUCTURES`
+        reactions : iterable of str, optional
+            Perturbed nuclear data. Valid values are listed in
+            :attr:`openmc.SensitivityFilter.REACTIONS`. If None, all are
+            included.
+
+        """
+        if reactions is None:
+            reactions = openmc.SensitivityFilter.REACTIONS
+        sens_filter = openmc.SensitivityFilter(nuclides, reactions, energies)
+
+        sens_tally = openmc.Tally(name='k-eff sensitivity numerator')
+        sens_tally.filters = [sens_filter]
+        sens_tally.scores = ['keff-sensitivity-numerator']
+        self.tallies.append(sens_tally)
+
+        if not any('ifp-denominator' in t.scores for t in self.tallies):
+            denom_tally = openmc.Tally(name='IFP denominator')
+            denom_tally.scores = ['ifp-denominator']
+            self.tallies.append(denom_tally)
+
+        # The fission spectrum of each nuclide is needed to constrain the
+        # sensitivity to the fission spectrum to preserve its normalization
+        spectrum_scores = []
+        if 'chi-prompt' in sens_filter.reactions:
+            spectrum_scores.append('prompt-nu-fission')
+        if 'chi-delayed' in sens_filter.reactions:
+            spectrum_scores.append('delayed-nu-fission')
+        if spectrum_scores:
+            spectrum_tally = openmc.Tally(name='k-eff sensitivity spectrum')
+            spectrum_tally.filters = [
+                openmc.EnergyoutFilter(sens_filter.energies)]
+            spectrum_tally.nuclides = sens_filter.nuclides
+            spectrum_tally.scores = spectrum_scores
+            self.tallies.append(spectrum_tally)
+
     # TODO: This should also be incorporated into lower-level calls in
     # settings.py, but it requires information about the tallies currently
     # on the active Model

@@ -6,6 +6,7 @@
 #include "openmc/particle_type.h"
 #include "openmc/position.h"
 #include "openmc/random_lcg.h"
+#include "openmc/sensitivity.h"
 #include "openmc/tallies/filter_match.h"
 #include "openmc/vector.h"
 
@@ -530,6 +531,10 @@ private:
   // Iterated Fission Probability
   double lifetime_ {0.0}; //!< neutron lifetime [s]
 
+  // Sensitivity events recorded since birth and those saved for secondaries
+  SensitivityLink sensitivity_events_;
+  vector<SensitivitySecondary> sensitivity_secondaries_;
+
   int n_collision_ {0};
 
   bool write_track_ {false};
@@ -648,6 +653,17 @@ public:
   // Particle lifetime
   double& lifetime() { return lifetime_; }
   const double& lifetime() const { return lifetime_; }
+
+  // Sensitivity events
+  SensitivityLink& sensitivity_events() { return sensitivity_events_; }
+  const SensitivityLink& sensitivity_events() const
+  {
+    return sensitivity_events_;
+  }
+  vector<SensitivitySecondary>& sensitivity_secondaries()
+  {
+    return sensitivity_secondaries_;
+  }
 
   // What event took place, described in greater detail below
   TallyEvent& event() { return event_; }

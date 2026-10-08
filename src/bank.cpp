@@ -3,6 +3,8 @@
 #include "openmc/error.h"
 #include "openmc/ifp.h"
 #include "openmc/message_passing.h"
+#include "openmc/sensitivity.h"
+#include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/vector.h"
 
@@ -104,6 +106,7 @@ void sort_bank(SharedArray<SourceSite>& bank, bool is_fission_bank)
   vector<SourceSite> sorted_bank_holder;
   vector<vector<int>> sorted_ifp_delayed_group_bank;
   vector<vector<double>> sorted_ifp_lifetime_bank;
+  vector<SensitivityChain> sorted_sensitivity_bank;
 
   // If there is not enough space, allocate a temporary vector and point to it
   if (bank.size() > bank.capacity() / 2) {
@@ -116,6 +119,9 @@ void sort_bank(SharedArray<SourceSite>& bank, bool is_fission_bank)
   if (settings::ifp_on() && is_fission_bank) {
     allocate_temporary_vector_ifp(
       sorted_ifp_delayed_group_bank, sorted_ifp_lifetime_bank);
+  }
+  if (settings::sensitivity_on && is_fission_bank) {
+    sorted_sensitivity_bank.resize(bank.size());
   }
 
   // Use parent and progeny indices to sort bank
@@ -139,6 +145,10 @@ void sort_bank(SharedArray<SourceSite>& bank, bool is_fission_bank)
       copy_ifp_data_from_fission_banks(
         i, idx, sorted_ifp_delayed_group_bank, sorted_ifp_lifetime_bank);
     }
+    if (settings::sensitivity_on && is_fission_bank) {
+      sorted_sensitivity_bank[idx] =
+        std::move(simulation::sensitivity_fission_bank[i]);
+    }
   }
 
   // Copy sorted bank into the fission bank
@@ -146,6 +156,10 @@ void sort_bank(SharedArray<SourceSite>& bank, bool is_fission_bank)
   if (settings::ifp_on() && is_fission_bank) {
     copy_ifp_data_to_fission_banks(
       sorted_ifp_delayed_group_bank.data(), sorted_ifp_lifetime_bank.data());
+  }
+  if (settings::sensitivity_on && is_fission_bank) {
+    std::move(sorted_sensitivity_bank.begin(), sorted_sensitivity_bank.end(),
+      simulation::sensitivity_fission_bank.begin());
   }
 }
 

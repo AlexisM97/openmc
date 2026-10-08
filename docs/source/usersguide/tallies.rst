@@ -358,6 +358,14 @@ The following tables show all valid scores:
     |                      |kinetics parameters using the iterated fission     |
     |                      |probability (IFP) method.                          |
     +----------------------+---------------------------------------------------+
+    |keff-sensitivity-     |Adjoint-weighted derivative of the number of       |
+    |numerator             |fission events with respect to a relative          |
+    |                      |perturbation of nuclear data. This score must be   |
+    |                      |used with a :class:`openmc.SensitivityFilter` and  |
+    |                      |is divided by ``ifp-denominator`` to obtain        |
+    |                      |sensitivity coefficients of :math:`k_{eff}`. See   |
+    |                      |:ref:`sensitivity`.                                |
+    +----------------------+---------------------------------------------------+
 
 .. _usersguide_virtual_material:
 

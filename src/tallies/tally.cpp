@@ -14,6 +14,7 @@
 #include "openmc/particle.h"
 #include "openmc/reaction.h"
 #include "openmc/reaction_product.h"
+#include "openmc/sensitivity.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/source.h"
@@ -193,10 +194,11 @@ Tally::Tally(pugi::xml_node node)
     fatal_error(fmt::format("No scores specified on tally {}.", id_));
   }
 
-  // Determine which kinds of IFP data this tally requires. The two flags are
+  // Determine which kinds of IFP data this tally requires. The flags are
   // independent, so a score simply turns on the data it needs.
   bool wants_lifetime = false;
   bool wants_delayed_group = false;
+  bool wants_sensitivity = false;
   for (int score : scores_) {
     switch (score) {
     case SCORE_IFP_TIME_NUM:
@@ -206,12 +208,19 @@ Tally::Tally(pugi::xml_node node)
     case SCORE_IFP_DENOM:
       wants_delayed_group = true;
       break;
+    case SCORE_KEFF_SENSITIVITY_NUM:
+      wants_sensitivity = true;
+      break;
     }
   }
 
-  if (wants_lifetime || wants_delayed_group) {
+  if (wants_sensitivity && !settings::sensitivity_on) {
+    check_sensitivity_settings();
+  }
+
+  if (wants_lifetime || wants_delayed_group || wants_sensitivity) {
     // Validate once, when the first IFP tally is encountered
-    if (!settings::ifp_on()) {
+    if (!settings::ifp_on() && !settings::sensitivity_on) {
       if (settings::run_mode == RunMode::FIXED_SOURCE) {
         fatal_error(
           "Iterated Fission Probability can only be used in an eigenvalue "
@@ -236,6 +245,7 @@ Tally::Tally(pugi::xml_node node)
     if (settings::run_mode == RunMode::EIGENVALUE) {
       settings::ifp_lifetime_on |= wants_lifetime;
       settings::ifp_delayed_group_on |= wants_delayed_group;
+      settings::sensitivity_on |= wants_sensitivity;
     }
   }
 
@@ -674,6 +684,7 @@ void Tally::set_scores(const vector<std::string>& scores)
     case SCORE_IFP_TIME_NUM:
     case SCORE_IFP_BETA_NUM:
     case SCORE_IFP_DENOM:
+    case SCORE_KEFF_SENSITIVITY_NUM:
       estimator_ = TallyEstimator::COLLISION;
       break;
     }

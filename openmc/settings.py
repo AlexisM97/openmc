@@ -116,7 +116,8 @@ class Settings:
         Number of generations per batch
     ifp_n_generation : int
         Number of generations to consider for the Iterated Fission Probability
-        method.
+        method. This is also the number of generations used to estimate the
+        importance of neutrons for sensitivity coefficients.
     max_lost_particles : int
         Maximum number of lost particles
 

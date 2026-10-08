@@ -11,6 +11,7 @@
 #include "openmc/photon.h"
 #include "openmc/reaction_product.h"
 #include "openmc/search.h"
+#include "openmc/sensitivity.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/string_utils.h"
@@ -998,6 +999,14 @@ void score_general_ce_nonanalog(Particle& p, int i_tally, int start_index,
         }
       }
       break;
+
+    case SCORE_KEFF_SENSITIVITY_NUM:
+      // The sensitivity filter bins are determined by the events in the
+      // ancestry of the particle, so scores are added directly to the results
+      if (settings::sensitivity_on && p.type().is_neutron() && p.fission()) {
+        score_keff_sensitivity(p, i_tally, score_index);
+      }
+      continue;
 
     case N_2N:
     case N_3N:

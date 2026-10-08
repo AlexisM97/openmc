@@ -396,6 +396,7 @@ list(APPEND libopenmc_SOURCES
   src/secondary_nbody.cpp
   src/secondary_thermal.cpp
   src/secondary_uncorrelated.cpp
+  src/sensitivity.cpp
   src/settings.cpp
   src/simulation.cpp
   src/source.cpp
@@ -430,6 +431,7 @@ list(APPEND libopenmc_SOURCES
   src/tallies/filter_particle_production.cpp
   src/tallies/filter_polar.cpp
   src/tallies/filter_reaction.cpp
+  src/tallies/filter_sensitivity.cpp
   src/tallies/filter_sph_harm.cpp
   src/tallies/filter_sptl_legendre.cpp
   src/tallies/filter_surface.cpp
