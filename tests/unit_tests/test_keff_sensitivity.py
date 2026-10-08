@@ -139,3 +139,63 @@ def test_exceptions(run_in_tmpdir, model, case):
 
     with pytest.raises(RuntimeError):
         model.run()
+
+
+def test_latent_generations_xml(run_in_tmpdir):
+    settings = openmc.Settings()
+    settings.sensitivity_latent_generations = 3
+    settings.export_to_xml()
+    assert openmc.Settings.from_xml().sensitivity_latent_generations == 3
+    with pytest.raises(ValueError):
+        settings.sensitivity_latent_generations = -1
+
+
+def test_get_kinetics_sensitivities(run_in_tmpdir, model):
+    model.settings.inactive = 10
+    model.settings.batches = 20
+    model.settings.ifp_n_generation = 4
+    model.settings.sensitivity_latent_generations = 3
+    model.add_kinetics_sensitivity_tallies('U235', ENERGIES)
+    sp_file = model.run()
+    with openmc.StatePoint(sp_file) as sp:
+        result = sp.get_kinetics_sensitivities()
+
+    assert np.allclose(result.energies, ENERGIES)
+    assert 0.0 < result.beta_effective.n < 0.05
+    assert 0.0 < result.generation_time.n < 1e-6
+    for rx in ('total', 'nu', 'chi-prompt-constrained'):
+        assert result.beta_coefficients['U235', rx].shape == (3,)
+        assert result.generation_time_coefficients['U235', rx].shape == (3,)
+
+    # With a single fissionable nuclide, every link of every chain contains
+    # exactly one multiplicity event, so scaling nu does not change beta and
+    # changes the generation time only through k
+    s_beta_nu = result.beta_coefficients['U235', 'nu'].sum()
+    s_gen_nu = result.generation_time_coefficients['U235', 'nu'].sum()
+    assert s_beta_nu.n == pytest.approx(0.0, abs=1e-8)
+    assert s_gen_nu.n == pytest.approx(-1.0)
+
+
+@pytest.mark.parametrize("case", ["mixed scores", "filter on scalar",
+                                  "too few inactive"])
+def test_kinetics_exceptions(run_in_tmpdir, model, case):
+    model.settings.inactive = 10
+    model.settings.batches = 12
+    model.settings.ifp_n_generation = 4
+    model.settings.sensitivity_latent_generations = 3
+    sens_filter = openmc.SensitivityFilter('U235', ['fission'], ENERGIES)
+    tally = openmc.Tally()
+    if case == "mixed scores":
+        tally.filters = [sens_filter]
+        tally.scores = ['beta-sensitivity-numerator', 'kinetics-population']
+    elif case == "filter on scalar":
+        tally.filters = [sens_filter]
+        tally.scores = ['kinetics-population']
+    elif case == "too few inactive":
+        # 4 IFP generations + 1 + 10 latent generations > 10 inactive batches
+        model.settings.sensitivity_latent_generations = 10
+        tally.scores = ['kinetics-population']
+    model.tallies = [tally]
+
+    with pytest.raises(RuntimeError):
+        model.run()

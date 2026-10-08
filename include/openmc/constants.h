@@ -315,7 +315,8 @@ enum class MgxsType {
 
 enum class TallyResult { VALUE, SUM, SUM_SQ, SUM_THIRD, SUM_FOURTH };
 
-enum class TallyType { VOLUME, MESH_SURFACE, SURFACE, PULSE_HEIGHT };
+// BIRTH tallies are scored once for each source neutron when it is born
+enum class TallyType { VOLUME, MESH_SURFACE, SURFACE, PULSE_HEIGHT, BIRTH };
 
 enum class TallyEstimator { ANALOG, TRACKLENGTH, COLLISION };
 
@@ -328,27 +329,33 @@ enum class TallyEvent { SURFACE, LATTICE, KILL, SCATTER, ABSORB };
 // store one of these enum values usually also may be responsible for storing
 // MT numbers from the long enum above.
 enum TallyScore {
-  SCORE_FLUX = -1,                 // flux
-  SCORE_TOTAL = -2,                // total reaction rate
-  SCORE_SCATTER = -3,              // scattering rate
-  SCORE_NU_SCATTER = -4,           // scattering production rate
-  SCORE_ABSORPTION = -5,           // absorption rate
-  SCORE_FISSION = -6,              // fission rate
-  SCORE_NU_FISSION = -7,           // neutron production rate
-  SCORE_KAPPA_FISSION = -8,        // fission energy production rate
-  SCORE_CURRENT = -9,              // current
-  SCORE_EVENTS = -10,              // number of events
-  SCORE_DELAYED_NU_FISSION = -11,  // delayed neutron production rate
-  SCORE_PROMPT_NU_FISSION = -12,   // prompt neutron production rate
-  SCORE_INVERSE_VELOCITY = -13,    // flux-weighted inverse velocity
-  SCORE_FISS_Q_PROMPT = -14,       // prompt fission Q-value
-  SCORE_FISS_Q_RECOV = -15,        // recoverable fission Q-value
-  SCORE_DECAY_RATE = -16,          // delayed neutron precursor decay rate
-  SCORE_PULSE_HEIGHT = -17,        // pulse-height
-  SCORE_IFP_TIME_NUM = -18,        // IFP lifetime numerator
-  SCORE_IFP_BETA_NUM = -19,        // IFP delayed fraction numerator
-  SCORE_IFP_DENOM = -20,           // IFP common denominator
-  SCORE_KEFF_SENSITIVITY_NUM = -21 // k-eff sensitivity numerator
+  SCORE_FLUX = -1,                  // flux
+  SCORE_TOTAL = -2,                 // total reaction rate
+  SCORE_SCATTER = -3,               // scattering rate
+  SCORE_NU_SCATTER = -4,            // scattering production rate
+  SCORE_ABSORPTION = -5,            // absorption rate
+  SCORE_FISSION = -6,               // fission rate
+  SCORE_NU_FISSION = -7,            // neutron production rate
+  SCORE_KAPPA_FISSION = -8,         // fission energy production rate
+  SCORE_CURRENT = -9,               // current
+  SCORE_EVENTS = -10,               // number of events
+  SCORE_DELAYED_NU_FISSION = -11,   // delayed neutron production rate
+  SCORE_PROMPT_NU_FISSION = -12,    // prompt neutron production rate
+  SCORE_INVERSE_VELOCITY = -13,     // flux-weighted inverse velocity
+  SCORE_FISS_Q_PROMPT = -14,        // prompt fission Q-value
+  SCORE_FISS_Q_RECOV = -15,         // recoverable fission Q-value
+  SCORE_DECAY_RATE = -16,           // delayed neutron precursor decay rate
+  SCORE_PULSE_HEIGHT = -17,         // pulse-height
+  SCORE_IFP_TIME_NUM = -18,         // IFP lifetime numerator
+  SCORE_IFP_BETA_NUM = -19,         // IFP delayed fraction numerator
+  SCORE_IFP_DENOM = -20,            // IFP common denominator
+  SCORE_KEFF_SENSITIVITY_NUM = -21, // k-eff sensitivity numerator
+  SCORE_KINETICS_POPULATION = -22,  // source neutrons with full ancestry
+  SCORE_KINETICS_DELAYED = -23,     // ... whose ancestor was born delayed
+  SCORE_KINETICS_LIFETIME = -24,    // ... weighted by ancestor lifetime
+  SCORE_POPULATION_SENSITIVITY_NUM = -25, // population sensitivity numerator
+  SCORE_BETA_SENSITIVITY_NUM = -26,       // beta-eff sensitivity numerator
+  SCORE_LIFETIME_SENSITIVITY_NUM = -27    // lifetime sensitivity numerator
 };
 
 // Global tally parameters
@@ -360,6 +367,9 @@ constexpr int C_NONE {-1};
 
 // Default value of generation for IFP
 constexpr int DEFAULT_IFP_N_GENERATION {10};
+
+// Default number of latent generations for kinetics parameter sensitivities
+constexpr int DEFAULT_SENSITIVITY_LATENT_GENERATIONS {10};
 
 // Interpolation rules
 enum class Interpolation {

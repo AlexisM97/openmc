@@ -351,6 +351,11 @@ class Model:
             :attr:`openmc.SensitivityFilter.REACTIONS`. If None, all are
             included.
 
+        Returns
+        -------
+        openmc.SensitivityFilter
+            The sensitivity filter used by the added tallies
+
         """
         if reactions is None:
             reactions = openmc.SensitivityFilter.REACTIONS
@@ -380,6 +385,54 @@ class Model:
             spectrum_tally.nuclides = sens_filter.nuclides
             spectrum_tally.scores = spectrum_scores
             self.tallies.append(spectrum_tally)
+        return sens_filter
+
+    def add_kinetics_sensitivity_tallies(
+        self,
+        nuclides: str | Sequence[str],
+        energies: Sequence[float] | str,
+        reactions: Sequence[str] | None = None,
+    ):
+        """Add tallies for calculating the sensitivity coefficients of the
+        effective delayed neutron fraction and generation time.
+
+        This method adds the tallies needed to compute the effective delayed
+        neutron fraction, the effective generation time, and their sensitivity
+        coefficients to nuclear data using the collision history-based method.
+        The tallies for k-effective sensitivity coefficients are also added
+        since they are needed for the generation time. After a model is run,
+        the sensitivity coefficients can be determined through the
+        :meth:`openmc.StatePoint.get_kinetics_sensitivities` method.
+
+        .. versionadded:: 0.16.1
+
+        Parameters
+        ----------
+        nuclides : str or iterable of str
+            Names of the perturbed nuclides
+        energies : iterable of float or str
+            Energy group boundaries in [eV] or the name of a group structure in
+            :data:`openmc.mgxs.GROUP_STRUCTURES`
+        reactions : iterable of str, optional
+            Perturbed nuclear data. Valid values are listed in
+            :attr:`openmc.SensitivityFilter.REACTIONS`. If None, all are
+            included.
+
+        """
+        sens_filter = self.add_keff_sensitivity_tallies(
+            nuclides, energies, reactions)
+
+        scalar_tally = openmc.Tally(name='kinetics parameters')
+        scalar_tally.scores = ['kinetics-population', 'kinetics-delayed',
+                               'kinetics-lifetime']
+        self.tallies.append(scalar_tally)
+
+        binned_tally = openmc.Tally(name='kinetics sensitivity numerators')
+        binned_tally.filters = [sens_filter]
+        binned_tally.scores = ['population-sensitivity-numerator',
+                               'beta-sensitivity-numerator',
+                               'lifetime-sensitivity-numerator']
+        self.tallies.append(binned_tally)
 
     # TODO: This should also be incorporated into lower-level calls in
     # settings.py, but it requires information about the tallies currently

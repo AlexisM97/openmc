@@ -40,6 +40,7 @@ namespace simulation {
 vector<SensitivityChain> sensitivity_source_bank;
 vector<SensitivityChain> sensitivity_fission_bank;
 vector<SensitivityChain> sensitivity_temp_bank;
+array<double, 2> kinetics_reference {};
 
 } // namespace simulation
 
@@ -48,6 +49,43 @@ vector<SensitivityChain> sensitivity_temp_bank;
 //==============================================================================
 
 namespace {
+
+//! Weighted sums of the population, delayed indicator, and lifetime of the
+//! ancestors of source neutrons during inactive generations
+array<double, 3> kinetics_reference_sums {};
+
+//! Determine the positions of the end markers of the links in a chain
+//!
+//! \param[in] chain Chain of ancestors
+//! \param[out] ends Position of the end marker of each link
+void find_link_ends(const SensitivityChain& chain, vector<int64_t>& ends)
+{
+  ends.clear();
+  for (int64_t i = 0; i < chain.size(); ++i) {
+    if (chain[i].is_link_end())
+      ends.push_back(i);
+  }
+}
+
+//! Accumulate the events of a range of a chain into a dense array of filter
+//! bins, keeping track of the bins that were touched
+void accumulate_events(const SensitivityFilter& filt,
+  SensitivityChain::const_iterator begin, SensitivityChain::const_iterator end,
+  vector<int>& values, vector<char>& seen, vector<int>& touched)
+{
+  for (auto it = begin; it != end; ++it) {
+    if (it->is_link_end())
+      continue;
+    int bin = filt.get_bin(*it);
+    if (bin == C_NONE)
+      continue;
+    if (!seen[bin]) {
+      seen[bin] = true;
+      touched.push_back(bin);
+    }
+    values[bin] += it->sign();
+  }
+}
 
 //! Add an event to a link if the nuclide and reaction are being tracked
 void add_event(SensitivityLink& link, int i_nuclide, SensitivityReaction rx,
@@ -97,6 +135,33 @@ int n_sensitivity_links(const SensitivityChain& chain)
     [](const SensitivityEvent& e) { return e.is_link_end(); });
 }
 
+int sensitivity_chain_length()
+{
+  int n = settings::ifp_n_generation;
+  if (settings::kinetics_sensitivity_on) {
+    int n_latent = settings::sensitivity_latent_generations >= 0
+                     ? settings::sensitivity_latent_generations
+                     : DEFAULT_SENSITIVITY_LATENT_GENERATIONS;
+    n += 1 + n_latent;
+  }
+  return n;
+}
+
+bool is_kinetics_score(int score)
+{
+  switch (score) {
+  case SCORE_KINETICS_POPULATION:
+  case SCORE_KINETICS_DELAYED:
+  case SCORE_KINETICS_LIFETIME:
+  case SCORE_POPULATION_SENSITIVITY_NUM:
+  case SCORE_BETA_SENSITIVITY_NUM:
+  case SCORE_LIFETIME_SENSITIVITY_NUM:
+    return true;
+  default:
+    return false;
+  }
+}
+
 void check_sensitivity_settings()
 {
   if (settings::run_mode != RunMode::EIGENVALUE) {
@@ -125,10 +190,56 @@ void initialize_sensitivity()
 {
   model::sensitivity_nuclides.assign(data::nuclides.size(), false);
   model::sensitivity_reactions.fill(false);
+  simulation::kinetics_reference.fill(0.0);
+  kinetics_reference_sums.fill(0.0);
 
   for (const auto& tally : model::tallies) {
-    if (!contains(tally->scores_, SCORE_KEFF_SENSITIVITY_NUM))
+    bool has_keff = contains(tally->scores_, SCORE_KEFF_SENSITIVITY_NUM);
+    bool has_binned = false;
+    bool has_scalar = false;
+    for (auto score : tally->scores_) {
+      has_binned |= (score == SCORE_POPULATION_SENSITIVITY_NUM ||
+                     score == SCORE_BETA_SENSITIVITY_NUM ||
+                     score == SCORE_LIFETIME_SENSITIVITY_NUM);
+      has_scalar |=
+        (score == SCORE_KINETICS_POPULATION ||
+          score == SCORE_KINETICS_DELAYED || score == SCORE_KINETICS_LIFETIME);
+    }
+    if (!has_keff && !has_binned && !has_scalar)
       continue;
+
+    if (tally->nuclides_.size() != 1 || tally->nuclides_[0] != -1) {
+      fatal_error(fmt::format(
+        "Tally {} with sensitivity or kinetics scores cannot have nuclide "
+        "bins. Perturbed nuclides are specified on the sensitivity filter.",
+        tally->id_));
+    }
+
+    // Scores of different kinds are scored at different points of a history
+    // and cannot be mixed
+    int n_kinds = has_keff + has_binned + has_scalar;
+    int n_kind_scores = 0;
+    for (auto score : tally->scores_) {
+      if (score == SCORE_KEFF_SENSITIVITY_NUM || is_kinetics_score(score))
+        ++n_kind_scores;
+    }
+    if (n_kinds > 1 || n_kind_scores != tally->scores_.size() ||
+        (has_keff && tally->scores_.size() != 1)) {
+      fatal_error(fmt::format(
+        "Tally {} mixes sensitivity or kinetics scores with other scores. "
+        "'keff-sensitivity-numerator' must be the only score of its tally, "
+        "and binned and unbinned kinetics scores require separate tallies.",
+        tally->id_));
+    }
+
+    if (has_scalar) {
+      if (!tally->filters().empty()) {
+        fatal_error(fmt::format(
+          "Tally {} with unbinned kinetics scores cannot have filters.",
+          tally->id_));
+      }
+      continue;
+    }
 
     // The sensitivity filter determines which bin each event is scored to, so
     // it cannot be combined with other filters
@@ -138,22 +249,9 @@ void initialize_sensitivity()
         model::tally_filters[tally->filters(0)].get());
     }
     if (!filt) {
-      fatal_error(
-        fmt::format("Tally {} with score 'keff-sensitivity-numerator' "
-                    "must have a single sensitivity filter.",
-          tally->id_));
-    }
-    if (tally->nuclides_.size() != 1 || tally->nuclides_[0] != -1) {
-      fatal_error(fmt::format(
-        "Tally {} with score 'keff-sensitivity-numerator' cannot have nuclide "
-        "bins. Perturbed nuclides are specified on the sensitivity filter.",
+      fatal_error(fmt::format("Tally {} with sensitivity scores must have a "
+                              "single sensitivity filter.",
         tally->id_));
-    }
-    if (tally->scores_.size() != 1) {
-      fatal_error(
-        fmt::format("Tally {} with score 'keff-sensitivity-numerator' "
-                    "cannot have other scores.",
-          tally->id_));
     }
 
     for (auto i_nuclide : filt->nuclides()) {
@@ -162,6 +260,15 @@ void initialize_sensitivity()
     for (auto rx : filt->reactions()) {
       model::sensitivity_reactions[rx] = true;
     }
+  }
+
+  if (sensitivity_chain_length() > settings::n_inactive) {
+    fatal_error(fmt::format(
+      "Sensitivity coefficients require {} generations of ancestors, which "
+      "must be lower than or equal to the number of inactive batches. The "
+      "number of generations is ifp_n_generation, plus 1 + "
+      "sensitivity_latent_generations for kinetics parameters.",
+      sensitivity_chain_length()));
   }
 }
 
@@ -231,11 +338,11 @@ void bank_sensitivity_fission_site(
   const Particle& p, int i_nuclide, const SourceSite& site, int64_t idx)
 {
   // Copy the links of the ancestors, dropping the oldest one if the chain
-  // would otherwise exceed ifp_n_generation links
+  // would otherwise exceed its maximum length
   const auto& parent_chain =
     simulation::sensitivity_source_bank[p.current_work()];
   auto start = parent_chain.begin();
-  if (n_sensitivity_links(parent_chain) >= settings::ifp_n_generation) {
+  if (n_sensitivity_links(parent_chain) >= sensitivity_chain_length()) {
     start = std::find_if(start, parent_chain.end(),
               [](const SensitivityEvent& e) { return e.is_link_end(); }) +
             1;
@@ -258,7 +365,7 @@ void bank_sensitivity_fission_site(
     delayed ? SensitivityReaction::CHI_DELAYED
             : SensitivityReaction::CHI_PROMPT,
     site.E, 1);
-  chain.push_back(SENSITIVITY_LINK_END);
+  chain.push_back(sensitivity_link_end(site.delayed_group, p.lifetime()));
 }
 
 void save_sensitivity_secondary(Particle& p)
@@ -280,24 +387,138 @@ void restore_sensitivity_secondary(Particle& p)
 void score_keff_sensitivity(const Particle& p, int i_tally, int score_index)
 {
   const auto& chain = simulation::sensitivity_source_bank[p.current_work()];
-  if (n_sensitivity_links(chain) != settings::ifp_n_generation)
+  int n_links = sensitivity_chain_length();
+  if (n_sensitivity_links(chain) != n_links)
     return;
 
-  // The importance of the oldest ancestor is proportional to the weight of
-  // its descendants ifp_n_generation generations later, so the events of the
-  // oldest link are weighted by the current neutron's contribution
+  // The importance of an ancestor is proportional to the weight of its
+  // descendants ifp_n_generation - 1 generations later, so the events of the
+  // link that produced that ancestor are weighted by the current neutron's
+  // contribution. Older links are only stored for kinetics parameters.
+  int i_link = n_links - settings::ifp_n_generation;
+  auto it = chain.begin();
+  for (int i = 0; i < i_link; ++i) {
+    it = std::find_if(it, chain.end(), [](const SensitivityEvent& e) {
+      return e.is_link_end();
+    }) + 1;
+  }
+
   auto& tally = *model::tallies[i_tally];
   const auto& filt = *static_cast<const SensitivityFilter*>(
     model::tally_filters[tally.filters(0)].get());
   double wgt = p.wgt_last();
-  for (const auto& event : chain) {
-    if (event.is_link_end())
-      break;
-    int bin = filt.get_bin(event);
+  for (; it != chain.end() && !it->is_link_end(); ++it) {
+    int bin = filt.get_bin(*it);
     if (bin == C_NONE)
       continue;
 #pragma omp atomic
-    tally.results_(bin, score_index, TallyResult::VALUE) += event.sign() * wgt;
+    tally.results_(bin, score_index, TallyResult::VALUE) += it->sign() * wgt;
+  }
+}
+
+void score_kinetics_sensitivity(const Particle& p)
+{
+  const auto& chain = simulation::sensitivity_source_bank[p.current_work()];
+  int n_links = sensitivity_chain_length();
+
+  thread_local vector<int64_t> ends;
+  find_link_ends(chain, ends);
+  if (ends.size() != n_links)
+    return;
+
+  // Link i produced the ancestor that is n_links - 1 - i generations old. The
+  // delayed group of the ancestor ifp_n_generation generations old is stored
+  // at the end of the link that produced it, and its lifetime is stored at
+  // the end of the next link, consistent with the IFP scores.
+  int n_gen = settings::ifp_n_generation;
+  double delayed =
+    chain[ends[n_links - 1 - n_gen]].delayed_group() > 0 ? 1.0 : 0.0;
+  double lifetime = chain[ends[n_links - n_gen]].lifetime();
+  double wgt = p.wgt();
+
+  // During inactive generations, accumulate reference values used to center
+  // the scores of the active generations
+  if (simulation::current_batch <= settings::n_inactive) {
+#pragma omp critical(kinetics_reference)
+    {
+      kinetics_reference_sums[0] += wgt;
+      kinetics_reference_sums[1] += wgt * delayed;
+      kinetics_reference_sums[2] += wgt * lifetime;
+    }
+    return;
+  }
+
+  double beta_ref = simulation::kinetics_reference[0];
+  double lifetime_ref = simulation::kinetics_reference[1];
+
+  thread_local vector<int> values;
+  thread_local vector<char> seen;
+  thread_local vector<int> touched;
+  for (auto i_tally : model::active_birth_tallies) {
+    auto& tally = *model::tallies[i_tally];
+
+    // Unbinned scores
+    if (tally.filters().empty()) {
+      for (int i = 0; i < tally.scores_.size(); ++i) {
+        double score = 0.0;
+        switch (tally.scores_[i]) {
+        case SCORE_KINETICS_POPULATION:
+          score = wgt;
+          break;
+        case SCORE_KINETICS_DELAYED:
+          score = wgt * delayed;
+          break;
+        case SCORE_KINETICS_LIFETIME:
+          score = wgt * lifetime;
+          break;
+        }
+#pragma omp atomic
+        tally.results_(0, i, TallyResult::VALUE) += score;
+      }
+      continue;
+    }
+
+    // Sum the events of all links of the chain in each filter bin
+    const auto& filt = *static_cast<const SensitivityFilter*>(
+      model::tally_filters[tally.filters(0)].get());
+    values.assign(filt.n_bins(), 0);
+    seen.assign(filt.n_bins(), false);
+    touched.clear();
+    accumulate_events(filt, chain.begin(), chain.end(), values, seen, touched);
+
+    for (int i = 0; i < tally.scores_.size(); ++i) {
+      double coeff = 0.0;
+      switch (tally.scores_[i]) {
+      case SCORE_POPULATION_SENSITIVITY_NUM:
+        coeff = wgt;
+        break;
+      case SCORE_BETA_SENSITIVITY_NUM:
+        coeff = wgt * (delayed - beta_ref);
+        break;
+      case SCORE_LIFETIME_SENSITIVITY_NUM:
+        coeff = wgt * (lifetime - lifetime_ref);
+        break;
+      }
+      for (auto bin : touched) {
+        if (values[bin] == 0)
+          continue;
+#pragma omp atomic
+        tally.results_(bin, i, TallyResult::VALUE) += coeff * values[bin];
+      }
+    }
+  }
+}
+
+void finalize_kinetics_reference()
+{
+  auto sums = kinetics_reference_sums;
+#ifdef OPENMC_MPI
+  MPI_Allreduce(MPI_IN_PLACE, sums.data(), sums.size(), MPI_DOUBLE, MPI_SUM,
+    mpi::intracomm);
+#endif
+  if (sums[0] > 0.0) {
+    simulation::kinetics_reference[0] = sums[1] / sums[0];
+    simulation::kinetics_reference[1] = sums[2] / sums[0];
   }
 }
 

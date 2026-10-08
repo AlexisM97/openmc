@@ -205,6 +205,12 @@ std::unordered_map<int, std::string> REACTION_NAME_MAP {
   {SCORE_IFP_BETA_NUM, "ifp-beta-numerator"},
   {SCORE_IFP_DENOM, "ifp-denominator"},
   {SCORE_KEFF_SENSITIVITY_NUM, "keff-sensitivity-numerator"},
+  {SCORE_KINETICS_POPULATION, "kinetics-population"},
+  {SCORE_KINETICS_DELAYED, "kinetics-delayed"},
+  {SCORE_KINETICS_LIFETIME, "kinetics-lifetime"},
+  {SCORE_POPULATION_SENSITIVITY_NUM, "population-sensitivity-numerator"},
+  {SCORE_BETA_SENSITIVITY_NUM, "beta-sensitivity-numerator"},
+  {SCORE_LIFETIME_SENSITIVITY_NUM, "lifetime-sensitivity-numerator"},
   // Normal ENDF-based reactions
   {TOTAL_XS, "(n,total)"},
   {ELASTIC, "(n,elastic)"},

@@ -64,6 +64,7 @@ extern bool event_based;  //!< use event-based mode (instead of history-based)
 extern bool ifp_delayed_group_on; //!< Store delayed group IFP data?
 extern bool ifp_lifetime_on;      //!< Store lifetime IFP data?
 extern bool sensitivity_on; //!< Record events for sensitivity coefficients?
+extern bool kinetics_sensitivity_on; //!< Kinetics parameter sensitivities?
 extern bool legendre_to_tabular; //!< convert Legendre distributions to tabular?
 extern bool material_cell_offsets;   //!< create material cells offsets?
 extern bool output_summary;          //!< write summary.h5?
@@ -132,6 +133,8 @@ extern array<double, 4>
   time_cutoff; //!< Time cutoff in [s] for each particle type
 extern int
   ifp_n_generation; //!< Number of generation for Iterated Fission Probability
+extern int sensitivity_latent_generations; //!< Latent generations for kinetics
+                                           //!< parameter sensitivities
 extern int
   legendre_to_tabular_points; //!< number of points to convert Legendres
 extern int max_order;         //!< Maximum Legendre order for multigroup data

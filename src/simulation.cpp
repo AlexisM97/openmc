@@ -519,6 +519,9 @@ void initialize_batch()
     for (auto& t : model::tallies) {
       t->active_ = true;
     }
+    if (settings::kinetics_sensitivity_on) {
+      finalize_kinetics_reference();
+    }
   }
 
   // Add user tallies to active tallies list
@@ -740,6 +743,11 @@ void initialize_particle_track(
 
   // Discard sensitivity events saved for secondaries of a previous history
   p.sensitivity_secondaries().clear();
+
+  // Score kinetics parameters and their sensitivities for the source neutron
+  if (settings::kinetics_sensitivity_on && !is_secondary) {
+    score_kinetics_sensitivity(p);
+  }
 
   // Reset weight window ratio
   p.ww_factor() = 0.0;

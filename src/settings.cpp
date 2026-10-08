@@ -59,6 +59,7 @@ bool event_based {false};
 bool ifp_delayed_group_on {false};
 bool ifp_lifetime_on {false};
 bool sensitivity_on {false};
+bool kinetics_sensitivity_on {false};
 bool legendre_to_tabular {true};
 bool material_cell_offsets {true};
 bool output_summary {true};
@@ -115,6 +116,7 @@ ElectronTreatment electron_treatment {ElectronTreatment::TTB};
 array<double, 4> energy_cutoff {0.0, 1000.0, 0.0, 0.0};
 array<double, 4> time_cutoff {INFTY, INFTY, INFTY, INFTY};
 int ifp_n_generation {-1};
+int sensitivity_latent_generations {-1};
 int legendre_to_tabular_points {C_NONE};
 int max_order {0};
 int n_log_bins {8000};
@@ -595,6 +597,17 @@ void read_settings_xml(pugi::xml_node root)
       if (ifp_n_generation > n_inactive) {
         fatal_error("'ifp_n_generation' must be lower than or equal to the "
                     "number of inactive cycles.");
+      }
+    }
+
+    // Check for user value for the number of latent generations used for the
+    // sensitivity of kinetics parameters
+    if (check_for_node(root, "sensitivity_latent_generations")) {
+      sensitivity_latent_generations =
+        std::stoi(get_node_value(root, "sensitivity_latent_generations"));
+      if (sensitivity_latent_generations < 0) {
+        fatal_error("'sensitivity_latent_generations' must be greater than or "
+                    "equal to 0.");
       }
     }
   }
@@ -1381,6 +1394,7 @@ void free_memory_settings()
   settings::ifp_delayed_group_on = false;
   settings::ifp_lifetime_on = false;
   settings::sensitivity_on = false;
+  settings::kinetics_sensitivity_on = false;
 }
 
 //==============================================================================

@@ -23,6 +23,7 @@
 #include "openmc/output.h"
 #include "openmc/particle_type.h"
 #include "openmc/random_ray/flat_source_domain.h"
+#include "openmc/sensitivity.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/tallies/derivative.h"
@@ -180,6 +181,10 @@ extern "C" int openmc_statepoint_write(const char* filename, bool* write_source)
 
     // Write information for tallies
     write_attribute(tallies_group, "n_tallies", model::tallies.size());
+    if (settings::kinetics_sensitivity_on) {
+      write_attribute(tallies_group, "kinetics_sensitivity_reference",
+        simulation::kinetics_reference);
+    }
     if (!model::tallies.empty()) {
       // Write tally IDs
       vector<int32_t> tally_ids;

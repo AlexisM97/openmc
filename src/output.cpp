@@ -657,6 +657,12 @@ const std::unordered_map<int, const char*> score_names = {
   {SCORE_IFP_BETA_NUM, "IFP delayed fraction numerator"},
   {SCORE_IFP_DENOM, "IFP common denominator"},
   {SCORE_KEFF_SENSITIVITY_NUM, "k-eff sensitivity numerator"},
+  {SCORE_KINETICS_POPULATION, "Kinetics population"},
+  {SCORE_KINETICS_DELAYED, "Kinetics delayed population"},
+  {SCORE_KINETICS_LIFETIME, "Kinetics ancestor lifetime"},
+  {SCORE_POPULATION_SENSITIVITY_NUM, "Population sensitivity numerator"},
+  {SCORE_BETA_SENSITIVITY_NUM, "Beta-eff sensitivity numerator"},
+  {SCORE_LIFETIME_SENSITIVITY_NUM, "Lifetime sensitivity numerator"},
 };
 
 //! Create an ASCII output file showing all tally results.

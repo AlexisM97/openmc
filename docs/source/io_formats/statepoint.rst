@@ -63,6 +63,10 @@ The current version of the statepoint file format is 18.2.
 
 :Attributes: - **n_tallies** (*int*) -- Number of user-defined tallies.
              - **ids** (*int[]*) -- User-defined unique ID of each tally.
+             - **kinetics_sensitivity_reference** (*double[2]*) -- Reference
+               delayed neutron fraction and ancestor lifetime in [s] on which
+               the kinetics sensitivity numerators are centered. Only present
+               when kinetics parameter sensitivities are tallied.
 
 **/tallies/meshes/**
 

@@ -45,19 +45,34 @@ extern const array<const char*, N_SENSITIVITY_REACTIONS>
 //!
 //! The nuclide, perturbed reaction and sign of the event are packed into a
 //! single integer. All events have a magnitude of one, so the sign indicates
-//! whether the event increases or decreases the history probability. A code of
-//! zero marks the end of a link in a chain of ancestors.
+//! whether the event increases or decreases the history probability.
+//!
+//! The end of a link in a chain of ancestors is marked by a special event whose
+//! code stores the delayed group of the fission neutron produced at the end of
+//! the link and whose energy field stores the lifetime of the parent neutron
+//! when it produced the fission neutron.
 //==============================================================================
+
+constexpr int32_t SENSITIVITY_LINK_END_CODE {INT32_MIN};
+constexpr int32_t SENSITIVITY_LINK_END_RANGE {64}; //!< codes reserved
 
 struct SensitivityEvent {
   int32_t code; //!< sign * (1 + i_nuclide * N_SENSITIVITY_REACTIONS + rx)
   float E;      //!< incident energy, or outgoing energy for spectrum events
 
-  bool is_link_end() const { return code == 0; }
+  bool is_link_end() const
+  {
+    return code < SENSITIVITY_LINK_END_CODE + SENSITIVITY_LINK_END_RANGE;
+  }
   int sign() const { return code > 0 ? 1 : -1; }
   int index() const { return (code > 0 ? code : -code) - 1; }
   int nuclide() const { return index() / N_SENSITIVITY_REACTIONS; }
   int reaction() const { return index() % N_SENSITIVITY_REACTIONS; }
+
+  //! Delayed group of the fission neutron produced at the end of a link
+  int delayed_group() const { return code - SENSITIVITY_LINK_END_CODE; }
+  //! Lifetime of the parent neutron at the end of a link in [s]
+  double lifetime() const { return E; }
 };
 
 //! Events accumulated by a single neutron from its birth until it creates a
@@ -68,14 +83,35 @@ using SensitivityLink = vector<SensitivityEvent>;
 //! The links are stored contiguously, each one followed by an end marker.
 using SensitivityChain = vector<SensitivityEvent>;
 
-//! Marker for the end of a link in a chain
-constexpr SensitivityEvent SENSITIVITY_LINK_END {0, 0.0f};
+//! Create the marker for the end of a link
+//!
+//! \param[in] delayed_group Delayed group of the fission neutron produced
+//! \param[in] lifetime Lifetime of the parent neutron in [s]
+//! \return End marker
+inline SensitivityEvent sensitivity_link_end(int delayed_group, double lifetime)
+{
+  return {
+    SENSITIVITY_LINK_END_CODE + delayed_group, static_cast<float>(lifetime)};
+}
 
 //! Number of links in a chain
 //!
 //! \param[in] chain Chain of ancestors
 //! \return Number of links
 int n_sensitivity_links(const SensitivityChain& chain);
+
+//! Whether a tally score is scored when source neutrons are born for the
+//! calculation of kinetics parameters and their sensitivities
+//!
+//! \param[in] score Tally score
+//! \return Whether the score is a kinetics score
+bool is_kinetics_score(int score);
+
+//! Number of links stored in the chain of each neutron, which is
+//! ifp_n_generation for k-eff sensitivities. Sensitivities of kinetics
+//! parameters require the link that produced the ancestor ifp_n_generation
+//! generations old as well as sensitivity_latent_generations earlier links.
+int sensitivity_chain_length();
 
 //! Event log saved for a secondary neutron so that it continues the history
 //! of the particle that created it
@@ -109,6 +145,11 @@ extern vector<SensitivityChain> sensitivity_fission_bank;
 //! Ancestor chains of the sites sampled from the fission bank before they are
 //! distributed to the source bank
 extern vector<SensitivityChain> sensitivity_temp_bank;
+
+//! Reference values of the delayed neutron fraction and ancestor lifetime
+//! (in [s]) estimated during inactive generations. The scores of kinetics
+//! parameter sensitivities are centered on these values to reduce variance.
+extern array<double, 2> kinetics_reference;
 
 } // namespace simulation
 
@@ -170,6 +211,17 @@ void save_sensitivity_secondary(Particle& p);
 //!
 //! \param[in,out] p Particle being revived from its local secondary bank
 void restore_sensitivity_secondary(Particle& p);
+
+//! Score the kinetics parameter tallies of a source neutron when it is born.
+//! During inactive generations, the reference values of the kinetics
+//! parameters are accumulated instead.
+//!
+//! \param[in] p Particle born from the source bank
+void score_kinetics_sensitivity(const Particle& p);
+
+//! Determine the reference values of the kinetics parameters from the
+//! inactive generations. Called at the beginning of the first active batch.
+void finalize_kinetics_reference();
 
 //! Score the sensitivity numerator for the ancestor of the particle that is
 //! ifp_n_generation generations old

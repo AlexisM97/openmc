@@ -766,6 +766,16 @@ pseudo-random number generator.
 
   *Default*: 1
 
+--------------------------------------------
+``<sensitivity_latent_generations>`` Element
+--------------------------------------------
+
+The ``<sensitivity_latent_generations>`` element indicates the number of
+generations of ancestors, before those used to estimate importance, whose
+events are included in the sensitivity coefficients of kinetics parameters.
+
+  *Default*: 10
+
 -----------------------------------
 ``<shared_secondary_bank>`` Element
 -----------------------------------

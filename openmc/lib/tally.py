@@ -107,13 +107,17 @@ _SCORES = {
     -12: 'prompt-nu-fission', -13: 'inverse-velocity', -14: 'fission-q-prompt',
     -15: 'fission-q-recoverable', -16: 'decay-rate', -17: 'pulse-height',
     -18: 'ifp-time-numerator', -19: 'ifp-beta-numerator',
-    -20: 'ifp-denominator',
+    -20: 'ifp-denominator', -21: 'keff-sensitivity-numerator',
+    -22: 'kinetics-population', -23: 'kinetics-delayed',
+    -24: 'kinetics-lifetime', -25: 'population-sensitivity-numerator',
+    -26: 'beta-sensitivity-numerator', -27: 'lifetime-sensitivity-numerator',
 }
 _ESTIMATORS = {
     0: 'analog', 1: 'tracklength', 2: 'collision'
 }
 _TALLY_TYPES = {
-    0: 'volume', 1: 'mesh-surface', 2: 'surface', 3: 'pulse-height'
+    0: 'volume', 1: 'mesh-surface', 2: 'surface', 3: 'pulse-height',
+    4: 'birth'
 }
 
 

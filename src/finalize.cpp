@@ -117,6 +117,7 @@ int openmc_finalize()
   settings::n_inactive = 0;
   settings::n_particles = -1;
   settings::ifp_n_generation = -1;
+  settings::sensitivity_latent_generations = -1;
   settings::output_summary = true;
   settings::output_tallies = true;
   settings::particle_restart_run = false;

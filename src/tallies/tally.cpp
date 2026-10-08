@@ -64,6 +64,7 @@ vector<int> active_collision_tallies;
 vector<int> active_meshsurf_tallies;
 vector<int> active_surface_tallies;
 vector<int> active_pulse_height_tallies;
+vector<int> active_birth_tallies;
 vector<int32_t> pulse_height_cells;
 vector<double> time_grid;
 } // namespace model
@@ -199,6 +200,7 @@ Tally::Tally(pugi::xml_node node)
   bool wants_lifetime = false;
   bool wants_delayed_group = false;
   bool wants_sensitivity = false;
+  bool wants_kinetics = false;
   for (int score : scores_) {
     switch (score) {
     case SCORE_IFP_TIME_NUM:
@@ -211,6 +213,11 @@ Tally::Tally(pugi::xml_node node)
     case SCORE_KEFF_SENSITIVITY_NUM:
       wants_sensitivity = true;
       break;
+    default:
+      if (is_kinetics_score(score)) {
+        wants_sensitivity = true;
+        wants_kinetics = true;
+      }
     }
   }
 
@@ -246,6 +253,7 @@ Tally::Tally(pugi::xml_node node)
       settings::ifp_lifetime_on |= wants_lifetime;
       settings::ifp_delayed_group_on |= wants_delayed_group;
       settings::sensitivity_on |= wants_sensitivity;
+      settings::kinetics_sensitivity_on |= wants_kinetics;
     }
   }
 
@@ -686,6 +694,16 @@ void Tally::set_scores(const vector<std::string>& scores)
     case SCORE_IFP_DENOM:
     case SCORE_KEFF_SENSITIVITY_NUM:
       estimator_ = TallyEstimator::COLLISION;
+      break;
+
+    case SCORE_KINETICS_POPULATION:
+    case SCORE_KINETICS_DELAYED:
+    case SCORE_KINETICS_LIFETIME:
+    case SCORE_POPULATION_SENSITIVITY_NUM:
+    case SCORE_BETA_SENSITIVITY_NUM:
+    case SCORE_LIFETIME_SENSITIVITY_NUM:
+      type_ = TallyType::BIRTH;
+      estimator_ = TallyEstimator::ANALOG;
       break;
     }
 
@@ -1182,6 +1200,7 @@ void setup_active_tallies()
   model::active_meshsurf_tallies.clear();
   model::active_surface_tallies.clear();
   model::active_pulse_height_tallies.clear();
+  model::active_birth_tallies.clear();
   model::time_grid.clear();
 
   for (auto i = 0; i < model::tallies.size(); ++i) {
@@ -1223,6 +1242,10 @@ void setup_active_tallies()
       case TallyType::PULSE_HEIGHT:
         model::active_pulse_height_tallies.push_back(i);
         break;
+
+      case TallyType::BIRTH:
+        model::active_birth_tallies.push_back(i);
+        break;
       }
     }
   }
@@ -1246,6 +1269,7 @@ void free_memory_tally()
   model::active_meshsurf_tallies.clear();
   model::active_surface_tallies.clear();
   model::active_pulse_height_tallies.clear();
+  model::active_birth_tallies.clear();
   model::time_grid.clear();
 
   model::tally_map.clear();
@@ -1370,6 +1394,8 @@ extern "C" int openmc_tally_set_type(int32_t index, const char* type)
     model::tallies[index]->type_ = TallyType::SURFACE;
   } else if (strcmp(type, "pulse-height") == 0) {
     model::tallies[index]->type_ = TallyType::PULSE_HEIGHT;
+  } else if (strcmp(type, "birth") == 0) {
+    model::tallies[index]->type_ = TallyType::BIRTH;
   } else {
     set_errmsg(fmt::format("Unknown tally type: {}", type));
     return OPENMC_E_INVALID_ARGUMENT;

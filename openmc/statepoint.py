@@ -9,7 +9,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 from uncertainties import ufloat
-from uncertainties.unumpy import uarray
+from uncertainties.unumpy import nominal_values, uarray
 
 import openmc
 import openmc.checkvalue as cv
@@ -20,6 +20,47 @@ _VERSION_STATEPOINT = 18
 KineticsParameters = namedtuple("KineticsParameters", ["generation_time", "beta_effective"])
 KeffSensitivities = namedtuple(
     "KeffSensitivities", ["energies", "coefficients"])
+KineticsSensitivities = namedtuple(
+    "KineticsSensitivities",
+    ["energies", "beta_effective", "generation_time", "beta_coefficients",
+     "generation_time_coefficients"])
+
+
+def _sensitivity_coefficients(values, sens_filter, spectrum_tally=None):
+    """Build a dictionary of sensitivity coefficients from an array shaped as
+    (nuclides, reactions, groups), including combined sensitivities and
+    constrained fission spectrum sensitivities."""
+    coefficients = {}
+    for i, nuc in enumerate(sens_filter.nuclides):
+        for j, rx in enumerate(sens_filter.reactions):
+            coefficients[nuc, rx] = values[i, j]
+
+        def combine(name, components):
+            if all((nuc, c) in coefficients for c in components):
+                coefficients[nuc, name] = sum(
+                    coefficients[nuc, c] for c in components)
+
+        combine('scatter', ('elastic', 'inelastic'))
+        combine('total', ('elastic', 'inelastic', 'capture', 'fission'))
+        combine('nu', ('nu-prompt', 'nu-delayed'))
+
+        # Constrain fission spectrum sensitivities so that the perturbed
+        # spectrum remains normalized
+        if spectrum_tally is None:
+            continue
+        for chi, score in (('chi-prompt', 'prompt-nu-fission'),
+                           ('chi-delayed', 'delayed-nu-fission')):
+            if (nuc, chi) not in coefficients:
+                continue
+            production = spectrum_tally.get_values(
+                scores=[score], nuclides=[nuc]).ravel()
+            if production.sum() <= 0.0:
+                continue
+            spectrum = production / production.sum()
+            unconstrained = coefficients[nuc, chi]
+            coefficients[nuc, f'{chi}-constrained'] = (
+                unconstrained - spectrum * unconstrained.sum())
+    return coefficients
 
 
 class StatePoint:
@@ -812,9 +853,98 @@ class StatePoint:
             coefficients per energy group with associated uncertainties.
 
         """
+        sens_filter, values = self._keff_sensitivity_values()
+        coefficients = _sensitivity_coefficients(
+            values, sens_filter, self._sensitivity_spectrum_tally())
+        return KeffSensitivities(sens_filter.energies, coefficients)
+
+    def get_kinetics_sensitivities(self) -> KineticsSensitivities:
+        """Get sensitivity coefficients of kinetics parameters to nuclear data.
+
+        This method searches the statepoint for the tallies added by
+        :meth:`openmc.Model.add_kinetics_sensitivity_tallies` and computes the
+        effective delayed neutron fraction, the effective generation time, and
+        their relative sensitivity coefficients for each perturbed nuclide,
+        nuclear data, and energy group. Combined and constrained fission
+        spectrum sensitivities are computed as described in
+        :meth:`get_keff_sensitivities`.
+
+        The kinetics parameters returned by this method are adjoint-weighted
+        with the population of source neutrons, while those returned by
+        :meth:`get_kinetics_parameters` are weighted with fission events. Both
+        converge to the same values as ``ifp_n_generation`` increases.
+
+        .. versionadded:: 0.16.1
+
+        Returns
+        -------
+        KineticsSensitivities
+            A named tuple containing the energy group boundaries in [eV], the
+            effective delayed neutron fraction, the effective generation time
+            in [s], and dictionaries mapping (nuclide, reaction) to arrays of
+            sensitivity coefficients of each parameter per energy group.
+
+        """
+        scalar_tally = None
+        binned_tally = None
+        for tally in self.tallies.values():
+            if 'kinetics-population' in tally.scores:
+                scalar_tally = tally
+            elif 'population-sensitivity-numerator' in tally.scores:
+                binned_tally = tally
+        if scalar_tally is None or binned_tally is None:
+            raise LookupError('Could not find the tallies needed to compute '
+                              'kinetics parameter sensitivity coefficients.')
+
+        def get_ufloat(tally, score):
+            return uarray(tally.get_values(scores=[score]).ravel(),
+                          tally.get_values(scores=[score],
+                                           value='std_dev').ravel())
+
+        population = get_ufloat(scalar_tally, 'kinetics-population')[0]
+        delayed = get_ufloat(scalar_tally, 'kinetics-delayed')[0]
+        lifetime = get_ufloat(scalar_tally, 'kinetics-lifetime')[0]
+        beta_effective = delayed / population
+        mean_lifetime = lifetime / population
+        generation_time = mean_lifetime / self.keff
+
+        # The numerators are centered on reference values estimated during
+        # inactive generations. Undo the centering exactly using the final
+        # estimates of the parameters. The statistical uncertainty is that of
+        # the centered numerators: the uncertainties of the correction terms
+        # are strongly anticorrelated with the numerators and are omitted.
+        beta_ref, lifetime_ref = self._f['tallies'].attrs[
+            'kinetics_sensitivity_reference']
+        sens_filter = binned_tally.find_filter(openmc.SensitivityFilter)
+        pop_num = nominal_values(
+            get_ufloat(binned_tally, 'population-sensitivity-numerator'))
+        beta_num = get_ufloat(binned_tally, 'beta-sensitivity-numerator')
+        life_num = get_ufloat(binned_tally, 'lifetime-sensitivity-numerator')
+        s_beta = (beta_num + (beta_ref - beta_effective.n)*pop_num) / delayed
+        s_life = ((life_num + (lifetime_ref - mean_lifetime.n)*pop_num) /
+                  lifetime)
+
+        # The generation time is the mean lifetime divided by k-eff
+        keff_filter, s_keff = self._keff_sensitivity_values()
+        if keff_filter != sens_filter:
+            raise ValueError('The k-eff and kinetics sensitivity tallies must '
+                             'use the same sensitivity filter bins.')
+        s_gen_time = s_life.reshape(sens_filter.shape) - s_keff
+
+        spectrum_tally = self._sensitivity_spectrum_tally()
+        beta_coefficients = _sensitivity_coefficients(
+            s_beta.reshape(sens_filter.shape), sens_filter, spectrum_tally)
+        gen_time_coefficients = _sensitivity_coefficients(
+            s_gen_time, sens_filter, spectrum_tally)
+        return KineticsSensitivities(
+            sens_filter.energies, beta_effective, generation_time,
+            beta_coefficients, gen_time_coefficients)
+
+    def _keff_sensitivity_values(self):
+        """Return the sensitivity filter and k-eff sensitivity coefficients
+        shaped as (nuclides, reactions, groups)."""
         sens_tally = None
         denom_tally = None
-        spectrum_tally = None
         for tally in self.tallies.values():
             if 'keff-sensitivity-numerator' in tally.scores:
                 if sens_tally is not None:
@@ -823,8 +953,6 @@ class StatePoint:
                 sens_tally = tally
             elif 'ifp-denominator' in tally.scores:
                 denom_tally = tally
-            elif tally.name == 'k-eff sensitivity spectrum':
-                spectrum_tally = tally
         if sens_tally is None or denom_tally is None:
             raise LookupError('Could not find the tallies needed to compute '
                               'k-eff sensitivity coefficients.')
@@ -834,36 +962,9 @@ class StatePoint:
         denominator = ufloat(denom_tally.mean.ravel()[0],
                              denom_tally.std_dev.ravel()[0])
         values = (numerator / denominator).reshape(sens_filter.shape)
+        return sens_filter, values
 
-        coefficients = {}
-        for i, nuc in enumerate(sens_filter.nuclides):
-            for j, rx in enumerate(sens_filter.reactions):
-                coefficients[nuc, rx] = values[i, j]
-
-            def combine(name, components):
-                if all((nuc, c) in coefficients for c in components):
-                    coefficients[nuc, name] = sum(
-                        coefficients[nuc, c] for c in components)
-
-            combine('scatter', ('elastic', 'inelastic'))
-            combine('total', ('elastic', 'inelastic', 'capture', 'fission'))
-            combine('nu', ('nu-prompt', 'nu-delayed'))
-
-            # Constrain fission spectrum sensitivities so that the perturbed
-            # spectrum remains normalized
-            if spectrum_tally is None:
-                continue
-            for chi, score in (('chi-prompt', 'prompt-nu-fission'),
-                               ('chi-delayed', 'delayed-nu-fission')):
-                if (nuc, chi) not in coefficients:
-                    continue
-                production = spectrum_tally.get_values(
-                    scores=[score], nuclides=[nuc]).ravel()
-                if production.sum() <= 0.0:
-                    continue
-                spectrum = production / production.sum()
-                unconstrained = coefficients[nuc, chi]
-                coefficients[nuc, f'{chi}-constrained'] = (
-                    unconstrained - spectrum * unconstrained.sum())
-
-        return KeffSensitivities(sens_filter.energies, coefficients)
+    def _sensitivity_spectrum_tally(self):
+        for tally in self.tallies.values():
+            if tally.name == 'k-eff sensitivity spectrum':
+                return tally

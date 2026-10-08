@@ -366,6 +366,31 @@ The following tables show all valid scores:
     |                      |sensitivity coefficients of :math:`k_{eff}`. See   |
     |                      |:ref:`sensitivity`.                                |
     +----------------------+---------------------------------------------------+
+    |kinetics-population   |Number of source neutrons whose ancestry is long   |
+    |                      |enough to estimate kinetics parameter              |
+    |                      |sensitivities. See :ref:`sensitivity`.             |
+    +----------------------+---------------------------------------------------+
+    |kinetics-delayed      |Number of source neutrons whose ancestor           |
+    |                      |``ifp_n_generation`` generations old was born from |
+    |                      |a delayed neutron precursor.                       |
+    +----------------------+---------------------------------------------------+
+    |kinetics-lifetime     |Lifetime of the ancestor ``ifp_n_generation``      |
+    |                      |generations old of source neutrons in seconds.     |
+    +----------------------+---------------------------------------------------+
+    |population-           |Derivative of ``kinetics-population`` with respect |
+    |sensitivity-numerator |to a relative perturbation of nuclear data. Must   |
+    |                      |be used with a :class:`openmc.SensitivityFilter`.  |
+    +----------------------+---------------------------------------------------+
+    |beta-sensitivity-     |Derivative of ``kinetics-delayed`` with respect to |
+    |numerator             |a relative perturbation of nuclear data, centered  |
+    |                      |on a reference delayed neutron fraction. Must be   |
+    |                      |used with a :class:`openmc.SensitivityFilter`.     |
+    +----------------------+---------------------------------------------------+
+    |lifetime-sensitivity- |Derivative of ``kinetics-lifetime`` with respect to|
+    |numerator             |a relative perturbation of nuclear data, centered  |
+    |                      |on a reference lifetime. Must be used with a       |
+    |                      |:class:`openmc.SensitivityFilter`.                 |
+    +----------------------+---------------------------------------------------+
 
 .. _usersguide_virtual_material:
 

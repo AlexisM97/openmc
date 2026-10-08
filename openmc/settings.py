@@ -270,6 +270,14 @@ class Settings:
         The type of calculation to perform (default is 'eigenvalue')
     seed : int
         Seed for the linear congruential pseudorandom number generator
+    sensitivity_latent_generations : int
+        Number of generations of ancestors, before those used to estimate
+        importance with the Iterated Fission Probability method, whose events
+        are included in the sensitivity coefficients of kinetics parameters.
+        These generations account for the effect of a perturbation on the
+        fundamental-mode source. If not specified, 10 generations are used.
+
+        .. versionadded:: 0.16.1
     shared_secondary_bank : bool
         Whether to use a shared secondary particle bank. When enabled,
         secondary particles are collected into a global bank, sorted for
@@ -458,6 +466,7 @@ class Settings:
 
         # Iterated Fission Probability
         self._ifp_n_generation = None
+        self._sensitivity_latent_generations = None
 
         # Collision track feature
         self._collision_track = {}
@@ -1058,6 +1067,17 @@ class Settings:
             cv.check_type("number of generations", ifp_n_generation, Integral)
             cv.check_greater_than("number of generations", ifp_n_generation, 0)
         self._ifp_n_generation = ifp_n_generation
+
+    @property
+    def sensitivity_latent_generations(self) -> int:
+        return self._sensitivity_latent_generations
+
+    @sensitivity_latent_generations.setter
+    def sensitivity_latent_generations(self, n: int):
+        if n is not None:
+            cv.check_type("number of latent generations", n, Integral)
+            cv.check_greater_than("number of latent generations", n, 0, True)
+        self._sensitivity_latent_generations = n
 
     @property
     def tabular_legendre(self) -> dict:
@@ -1821,6 +1841,11 @@ class Settings:
             element = ET.SubElement(root, "ifp_n_generation")
             element.text = str(self._ifp_n_generation)
 
+    def _create_sensitivity_latent_generations_subelement(self, root):
+        if self._sensitivity_latent_generations is not None:
+            element = ET.SubElement(root, "sensitivity_latent_generations")
+            element.text = str(self._sensitivity_latent_generations)
+
     def _create_tabular_legendre_subelements(self, root):
         if self.tabular_legendre:
             element = ET.SubElement(root, "tabular_legendre")
@@ -2351,6 +2376,11 @@ class Settings:
         if text is not None:
             self.ifp_n_generation = int(text)
 
+    def _sensitivity_latent_generations_from_xml_element(self, root):
+        text = get_text(root, 'sensitivity_latent_generations')
+        if text is not None:
+            self.sensitivity_latent_generations = int(text)
+
     def _tabular_legendre_from_xml_element(self, root):
         elem = root.find('tabular_legendre')
         if elem is not None:
@@ -2634,6 +2664,7 @@ class Settings:
         self._create_no_reduce_subelement(element)
         self._create_verbosity_subelement(element)
         self._create_ifp_n_generation_subelement(element)
+        self._create_sensitivity_latent_generations_subelement(element)
         self._create_tabular_legendre_subelements(element)
         self._create_temperature_subelements(element)
         self._create_properties_file_element(element)
@@ -2753,6 +2784,7 @@ class Settings:
         settings._no_reduce_from_xml_element(elem)
         settings._verbosity_from_xml_element(elem)
         settings._ifp_n_generation_from_xml_element(elem)
+        settings._sensitivity_latent_generations_from_xml_element(elem)
         settings._tabular_legendre_from_xml_element(elem)
         settings._temperature_from_xml_element(elem)
         settings._properties_file_from_xml_element(elem)
