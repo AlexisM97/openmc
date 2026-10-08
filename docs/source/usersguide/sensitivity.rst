@@ -252,8 +252,19 @@ total fission neutron multiplicity is used instead of its prompt and delayed
 components. :class:`openmc.data.Uncertainty` lists the reactions that have
 covariances but no sensitivity coefficients and vice versa, so that missing
 contributions can be identified. Covariances between different nuclides are
-not used, and the statistical uncertainty of the sensitivity coefficients is
-not propagated.
+not used.
+
+The statistical uncertainty of the sensitivity coefficients is propagated to
+the variance to first order, assuming that coefficients of different groups and
+reactions are uncorrelated, and is available as
+:attr:`~openmc.data.Uncertainty.std_dev_uncertainty`. Because statistical noise
+increases the variance on average, the expected increase is estimated as
+:attr:`~openmc.data.Uncertainty.bias` and
+:attr:`~openmc.data.Uncertainty.unbiased_std_dev` gives the uncertainty with
+the bias removed. The bias is negligible for well-converged sensitivities but
+can be significant for :math:`\beta_{\text{eff}}` sensitivities::
+
+    print(f'{100*result.std_dev:.3f} +/- {100*result.std_dev_uncertainty:.3f} %')
 
 -----------
 Limitations

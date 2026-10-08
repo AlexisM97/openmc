@@ -558,12 +558,20 @@ class UncertaintyContribution:
         Contribution to the relative variance. For a pair of distinct
         reactions, this includes both orderings of the pair and may be
         negative.
+    variance_std_dev : float
+        Standard deviation of the variance contribution due to the
+        statistical uncertainty of the sensitivity coefficients
+    bias : float
+        Expected increase of the variance contribution caused by the
+        statistical noise of the sensitivity coefficients
 
     """
     nuclide: str
     reaction1: str
     reaction2: str
     variance: float
+    variance_std_dev: float = 0.0
+    bias: float = 0.0
 
     @property
     def std_dev(self):
@@ -583,6 +591,22 @@ class Uncertainty:
         Relative variance of the response
     std_dev : float
         Relative standard deviation of the response
+    variance_std_dev : float
+        Standard deviation of the relative variance due to the statistical
+        uncertainty of the sensitivity coefficients
+    std_dev_uncertainty : float
+        Standard deviation of the relative standard deviation due to the
+        statistical uncertainty of the sensitivity coefficients
+    bias : float
+        Expected increase of the relative variance caused by the statistical
+        noise of the sensitivity coefficients, :math:`\sum_x \sum_g C_{xx,gg}
+        \sigma^2(S_{x,g})`. Statistical noise always increases the variance on
+        average, which matters when sensitivities have large relative
+        uncertainties.
+    unbiased_variance : float
+        Relative variance with the bias subtracted
+    unbiased_std_dev : float
+        Square root of the unbiased variance (0 if it is negative)
     contributions : list of UncertaintyContribution
         Contributions of pairs of reactions, sorted by decreasing magnitude
     missing_sensitivities : list of tuple
@@ -597,10 +621,26 @@ class Uncertainty:
     contributions: list = field(default_factory=list)
     missing_sensitivities: list = field(default_factory=list)
     missing_covariances: list = field(default_factory=list)
+    variance_std_dev: float = 0.0
+    bias: float = 0.0
 
     @property
     def std_dev(self):
         return np.sqrt(max(self.variance, 0.0))
+
+    @property
+    def std_dev_uncertainty(self):
+        if self.variance <= 0.0:
+            return 0.0
+        return self.variance_std_dev / (2.0 * self.std_dev)
+
+    @property
+    def unbiased_variance(self):
+        return self.variance - self.bias
+
+    @property
+    def unbiased_std_dev(self):
+        return np.sqrt(max(self.unbiased_variance, 0.0))
 
     def by_nuclide(self) -> dict:
         """Return the variance contributions summed over each nuclide"""
@@ -646,8 +686,11 @@ def propagate_uncertainty(coefficients: Mapping, covariances: Mapping,
         Dictionary mapping (nuclide, reaction) to sensitivity coefficients in
         each energy group, as returned by
         :meth:`openmc.StatePoint.get_keff_sensitivities` or
-        :meth:`openmc.StatePoint.get_kinetics_sensitivities`. Values with
-        uncertainties are replaced by their nominal values.
+        :meth:`openmc.StatePoint.get_kinetics_sensitivities`. If the values
+        have uncertainties, these are propagated to the variance to first
+        order assuming that the coefficients of different groups and
+        reactions are uncorrelated, and the bias of the variance due to
+        statistical noise is estimated.
     covariances : dict
         Dictionary mapping nuclide names to :class:`MultigroupCovariance`
     energies : Iterable of float, optional
@@ -660,11 +703,19 @@ def propagate_uncertainty(coefficients: Mapping, covariances: Mapping,
         Relative uncertainty of the response and its contributions
 
     """
-    def nominal(values):
+    def split(values):
+        """Return nominal values and standard deviations"""
         values = np.asarray(values)
         if values.dtype == object:
-            return np.array([getattr(v, 'n', v) for v in values], dtype=float)
-        return values.astype(float)
+            return (np.array([getattr(v, 'n', v) for v in values], dtype=float),
+                    np.array([getattr(v, 's', 0.0) for v in values],
+                             dtype=float))
+        return values.astype(float), np.zeros(len(values))
+
+    def add(parts):
+        """Sum sensitivities assuming uncorrelated uncertainties"""
+        return (sum(p[0] for p in parts),
+                np.sqrt(sum(p[1]**2 for p in parts)))
 
     nuclides = {nuc for nuc, _ in coefficients}
     result = Uncertainty(0.0)
@@ -691,7 +742,7 @@ def propagate_uncertainty(coefficients: Mapping, covariances: Mapping,
                 used.update((nuc, n) for n in names)
                 used.update((nuc, n.replace('-constrained', ''))
                             for n in names)
-                return sum(nominal(coefficients[nuc, n]) for n in names)
+                return add([split(coefficients[nuc, n]) for n in names])
             if mt in _LUMPED_MTS:
                 # Sensitivities of charged-particle levels are only available
                 # for the summary reaction, which is used for all its levels
@@ -699,13 +750,13 @@ def propagate_uncertainty(coefficients: Mapping, covariances: Mapping,
                            for m, lump in cov.lumped.items() if lump == mt}
                 parts = [sensitivity(m) for m in sorted(members)]
                 parts = [p for p in parts if p is not None]
-                return sum(parts) if parts else None
+                return add(parts) if parts else None
             for name in _sensitivity_names(mt):
                 if (nuc, name) in coefficients:
                     used.add((nuc, name))
                     if name == 'nu':
                         used.update({(nuc, 'nu-prompt'), (nuc, 'nu-delayed')})
-                    return nominal(coefficients[nuc, name])
+                    return split(coefficients[nuc, name])
             return None
 
         mts = _primary_mts(cov)
@@ -715,24 +766,45 @@ def propagate_uncertainty(coefficients: Mapping, covariances: Mapping,
             if s is None:
                 result.missing_sensitivities.append((nuc, _label(mt)))
             else:
-                if len(s) != cov.num_groups:
+                if len(s[0]) != cov.num_groups:
                     raise ValueError(
-                        f'Sensitivities of {nuc} have {len(s)} groups but '
+                        f'Sensitivities of {nuc} have {len(s[0])} groups but '
                         f'covariances have {cov.num_groups}.')
                 sens[mt] = s
 
+        # Derivative of the total variance with respect to each sensitivity,
+        # used to propagate statistical uncertainties of the sensitivities
         keys = list(sens)
+        gradient = {a: np.zeros(cov.num_groups) for a in keys}
         for i, a in enumerate(keys):
             for b in keys[i:]:
                 matrix = cov.get(a, b)
                 if matrix is None:
                     continue
-                var = sens[a] @ matrix @ sens[b]
-                if a != b:
+                (s_a, sd_a), (s_b, sd_b) = sens[a], sens[b]
+                var = s_a @ matrix @ s_b
+                if a == b:
+                    grad_a = 2.0 * matrix @ s_a
+                    var_var = np.sum((grad_a * sd_a)**2)
+                    bias = np.sum(np.diag(matrix) * sd_a**2)
+                    gradient[a] += grad_a
+                else:
                     var *= 2.0
+                    grad_a = 2.0 * matrix @ s_b
+                    grad_b = 2.0 * matrix.T @ s_a
+                    var_var = (np.sum((grad_a * sd_a)**2) +
+                               np.sum((grad_b * sd_b)**2))
+                    bias = 0.0
+                    gradient[a] += grad_a
+                    gradient[b] += grad_b
                 result.variance += var
+                result.bias += bias
                 result.contributions.append(UncertaintyContribution(
-                    nuc, _label(a), _label(b), var))
+                    nuc, _label(a), _label(b), var, np.sqrt(var_var), bias))
+
+        var_var = sum(np.sum((gradient[a] * sens[a][1])**2) for a in keys)
+        result.variance_std_dev = np.sqrt(
+            result.variance_std_dev**2 + var_var)
 
     # Sensitivities that were not used, excluding combined ones
     combined = {'inelastic', 'capture', 'scatter', 'total', 'nu',

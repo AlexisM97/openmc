@@ -198,3 +198,44 @@ def test_from_endf(run_in_tmpdir, endf_data):
     assert np.all(std >= 0.0) and np.all(std < 1.0)
     m = c.get(2, 2)
     assert np.allclose(m, m.T)
+
+
+def test_statistical_uncertainty():
+    """Compare the propagated statistical uncertainty and bias of the
+    variance with sampling of noisy sensitivity coefficients."""
+    rng = np.random.default_rng(1)
+    cov = {(18, 18): np.array([[4e-4, 1e-4], [1e-4, 9e-4]]),
+           (102, 102): np.diag([1e-2, 2e-2]),
+           (18, 102): np.array([[5e-4, 0.0], [2e-4, 1e-3]])}
+    s_fis, sd_fis = np.array([0.3, 0.6]), np.array([0.02, 0.03])
+    s_cap, sd_cap = np.array([-0.05, -0.1]), np.array([0.01, 0.005])
+    coefficients = {('U235', 'fission'): uarray(s_fis, sd_fis),
+                    ('U235', '(n,gamma)'): uarray(s_cap, sd_cap)}
+    result = openmc.data.propagate_uncertainty(
+        coefficients, {'U235': _cov(cov)})
+
+    samples = []
+    for _ in range(20000):
+        sample = {
+            ('U235', 'fission'): s_fis + rng.normal(0.0, sd_fis),
+            ('U235', '(n,gamma)'): s_cap + rng.normal(0.0, sd_cap)}
+        samples.append(openmc.data.propagate_uncertainty(
+            sample, {'U235': _cov(cov)}).variance)
+    samples = np.array(samples)
+
+    assert result.variance_std_dev == pytest.approx(samples.std(), rel=0.05)
+    assert samples.mean() - result.variance == pytest.approx(
+        result.bias, rel=0.1)
+    assert result.unbiased_variance == pytest.approx(
+        result.variance - result.bias)
+    assert result.std_dev_uncertainty == pytest.approx(
+        result.variance_std_dev / (2 * result.std_dev))
+    assert sum(c.bias for c in result.contributions) == \
+        pytest.approx(result.bias)
+
+    # Without uncertainties, nothing is propagated
+    nominal = {k: np.array([v.n for v in vals])
+               for k, vals in coefficients.items()}
+    result = openmc.data.propagate_uncertainty(nominal, {'U235': _cov(cov)})
+    assert result.variance_std_dev == 0.0
+    assert result.bias == 0.0
