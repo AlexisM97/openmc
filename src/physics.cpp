@@ -739,8 +739,7 @@ void scatter(Particle& p, int i_nuclide)
     double kT = nuc->multipole_ ? p.sqrtkT() * p.sqrtkT() : nuc->kTs_[i_temp];
 
     if (settings::sensitivity_on) {
-      record_sensitivity_event(
-        p, i_nuclide, SensitivityReaction::ELASTIC, p.E(), 1);
+      record_sensitivity_event(p, i_nuclide, ELASTIC, p.E(), 1);
     }
 
     // Perform collision physics for elastic scattering
@@ -756,8 +755,7 @@ void scatter(Particle& p, int i_nuclide)
     // S(A,B) SCATTERING
 
     if (settings::sensitivity_on) {
-      record_sensitivity_event(
-        p, i_nuclide, SensitivityReaction::ELASTIC, p.E(), 1);
+      record_sensitivity_event(p, i_nuclide, ELASTIC, p.E(), 1);
     }
 
     sab_scatter(i_nuclide, micro.index_sab, p);
@@ -781,13 +779,13 @@ void scatter(Particle& p, int i_nuclide)
 
     // Record the event before secondary neutrons are created so that they
     // inherit it
+    const auto& rx {nuc->reactions_[i]};
     if (settings::sensitivity_on) {
       record_sensitivity_event(
-        p, i_nuclide, SensitivityReaction::INELASTIC, p.E(), 1);
+        p, i_nuclide, sensitivity_channel(rx->mt_), p.E(), 1);
     }
 
     // Perform collision physics for inelastic scattering
-    const auto& rx {nuc->reactions_[i]};
     inelastic_scatter(*nuc, *rx, p);
     p.event_mt() = rx->mt_;
   }

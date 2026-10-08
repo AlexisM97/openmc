@@ -5,6 +5,7 @@
 #define OPENMC_SENSITIVITY_H
 
 #include <cstdint>
+#include <string>
 
 #include "openmc/array.h"
 #include "openmc/vector.h"
@@ -18,32 +19,42 @@ struct SourceSite;
 // Constants
 //==============================================================================
 
-//! Nuclear data that can be perturbed in a sensitivity calculation. The four
-//! reaction channels (elastic, inelastic, capture, fission) form a partition
-//! of the total cross section so that sensitivities to the total cross
-//! section can be obtained by summing them.
-enum class SensitivityReaction {
-  ELASTIC,     //!< Elastic scattering (including bound thermal scattering)
-  INELASTIC,   //!< Non-elastic scattering, including (n,xn) reactions
-  CAPTURE,     //!< Absorption that does not result in fission
-  FISSION,     //!< Fission cross section
-  NU_PROMPT,   //!< Prompt fission neutron multiplicity
-  NU_DELAYED,  //!< Delayed fission neutron multiplicity
-  CHI_PROMPT,  //!< Prompt fission spectrum (unconstrained)
-  CHI_DELAYED, //!< Delayed fission spectrum (unconstrained)
-};
+//! Nuclear data that can be perturbed in a sensitivity calculation are
+//! identified by channels. Channels below 1000 are the MT numbers of reaction
+//! cross sections, normalized so that partial fission reactions map to MT 18
+//! and charged-particle level reactions (MT 600-849) map to MT 103-107. Thermal
+//! scattering is attributed to elastic scattering (MT 2). Channels 1000 and
+//! above are fission neutron multiplicities and spectra.
+constexpr int SENSITIVITY_NU_PROMPT {1000};   //!< Prompt fission multiplicity
+constexpr int SENSITIVITY_NU_DELAYED {1001};  //!< Delayed fission multiplicity
+constexpr int SENSITIVITY_CHI_PROMPT {1002};  //!< Prompt fission spectrum
+constexpr int SENSITIVITY_CHI_DELAYED {1003}; //!< Delayed fission spectrum
+constexpr int N_SENSITIVITY_CHANNELS {1004};
 
-constexpr int N_SENSITIVITY_REACTIONS {8};
+//! Normalize the MT number of a reaction to its sensitivity channel
+//!
+//! \param[in] mt MT number of a reaction
+//! \return Sensitivity channel
+int sensitivity_channel(int mt);
 
-//! Names of perturbed nuclear data, ordered as in SensitivityReaction
-extern const array<const char*, N_SENSITIVITY_REACTIONS>
-  SENSITIVITY_REACTION_NAMES;
+//! Determine the sensitivity channels corresponding to the name of perturbed
+//! nuclear data. The names 'elastic', 'inelastic' (all non-elastic scattering
+//! including (n,xn) reactions), 'capture' (all non-fission absorption) and
+//! 'fission' form a partition of the total cross section. Reaction names
+//! accepted by tallies (e.g., '(n,2n)' or '(n,gamma)') select the channels of
+//! a single reaction, where '(n,level)' (MT 4) selects all inelastic levels.
+//! The names 'nu-prompt', 'nu-delayed', 'chi-prompt' and 'chi-delayed' select
+//! fission neutron multiplicities and spectra.
+//!
+//! \param[in] name Name of perturbed nuclear data
+//! \return Sensitivity channels
+vector<int> sensitivity_channels(const std::string& name);
 
 //==============================================================================
 //! An event that contributes to the derivative of a neutron history's
 //! probability with respect to a relative perturbation of nuclear data.
 //!
-//! The nuclide, perturbed reaction and sign of the event are packed into a
+//! The nuclide, perturbed channel and sign of the event are packed into a
 //! single integer. All events have a magnitude of one, so the sign indicates
 //! whether the event increases or decreases the history probability.
 //!
@@ -57,7 +68,7 @@ constexpr int32_t SENSITIVITY_LINK_END_CODE {INT32_MIN};
 constexpr int32_t SENSITIVITY_LINK_END_RANGE {64}; //!< codes reserved
 
 struct SensitivityEvent {
-  int32_t code; //!< sign * (1 + i_nuclide * N_SENSITIVITY_REACTIONS + rx)
+  int32_t code; //!< sign * (1 + i_nuclide * N_SENSITIVITY_CHANNELS + channel)
   float E;      //!< incident energy, or outgoing energy for spectrum events
 
   bool is_link_end() const
@@ -66,8 +77,8 @@ struct SensitivityEvent {
   }
   int sign() const { return code > 0 ? 1 : -1; }
   int index() const { return (code > 0 ? code : -code) - 1; }
-  int nuclide() const { return index() / N_SENSITIVITY_REACTIONS; }
-  int reaction() const { return index() % N_SENSITIVITY_REACTIONS; }
+  int nuclide() const { return index() / N_SENSITIVITY_CHANNELS; }
+  int channel() const { return index() % N_SENSITIVITY_CHANNELS; }
 
   //! Delayed group of the fission neutron produced at the end of a link
   int delayed_group() const { return code - SENSITIVITY_LINK_END_CODE; }
@@ -129,8 +140,12 @@ namespace model {
 //! Whether events for a given nuclide (indexed as data::nuclides) are recorded
 extern vector<char> sensitivity_nuclides;
 
-//! Whether events for a given perturbed reaction are recorded
-extern array<bool, N_SENSITIVITY_REACTIONS> sensitivity_reactions;
+//! Whether events for a given sensitivity channel are recorded
+extern array<bool, N_SENSITIVITY_CHANNELS> sensitivity_channels;
+
+//! Indices in Nuclide::reactions_ of the non-fission absorption reactions of
+//! each nuclide, used to resolve capture pseudo-collisions by reaction
+extern vector<vector<int>> sensitivity_capture_reactions;
 
 } // namespace model
 
@@ -174,11 +189,11 @@ void free_memory_sensitivity();
 //!
 //! \param[in,out] p Particle
 //! \param[in] i_nuclide Index of the nuclide in data::nuclides
-//! \param[in] rx Perturbed reaction
+//! \param[in] channel Perturbed channel (normalized MT for cross sections)
 //! \param[in] E Energy associated with the event in [eV]
 //! \param[in] sign +1 or -1
 void record_sensitivity_event(
-  Particle& p, int i_nuclide, SensitivityReaction rx, double E, int sign);
+  Particle& p, int i_nuclide, int channel, double E, int sign);
 
 //! Sample the events accounting for the derivative of the non-collision
 //! probability along a flight path of the particle.

@@ -30,6 +30,7 @@ from .library import *
 from .fission_energy import *
 from .resonance import *
 from .resonance_covariance import *
+from .covariance import *
 from .multipole import *
 from .grid import *
 from .function import *

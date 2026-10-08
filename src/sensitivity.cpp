@@ -4,15 +4,19 @@
 #include <climits>   // for INT_MAX
 #include <cmath>     // for log
 
+#include <fmt/core.h>
+
 #include "openmc/bank.h"
 #include "openmc/constants.h"
 #include "openmc/container_util.h"
+#include "openmc/endf.h"
 #include "openmc/error.h"
 #include "openmc/material.h"
 #include "openmc/message_passing.h"
 #include "openmc/nuclide.h"
 #include "openmc/particle.h"
 #include "openmc/random_lcg.h"
+#include "openmc/reaction.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/tallies/filter_sensitivity.h"
@@ -24,14 +28,11 @@ namespace openmc {
 // Global variables
 //==============================================================================
 
-const array<const char*, N_SENSITIVITY_REACTIONS> SENSITIVITY_REACTION_NAMES {
-  "elastic", "inelastic", "capture", "fission", "nu-prompt", "nu-delayed",
-  "chi-prompt", "chi-delayed"};
-
 namespace model {
 
 vector<char> sensitivity_nuclides;
-array<bool, N_SENSITIVITY_REACTIONS> sensitivity_reactions {};
+array<bool, N_SENSITIVITY_CHANNELS> sensitivity_channels {};
+vector<vector<int>> sensitivity_capture_reactions;
 
 } // namespace model
 
@@ -76,50 +77,84 @@ void accumulate_events(const SensitivityFilter& filt,
   for (auto it = begin; it != end; ++it) {
     if (it->is_link_end())
       continue;
-    int bin = filt.get_bin(*it);
-    if (bin == C_NONE)
-      continue;
-    if (!seen[bin]) {
-      seen[bin] = true;
-      touched.push_back(bin);
-    }
-    values[bin] += it->sign();
+    int sign = it->sign();
+    filt.for_each_bin(*it, [&](int bin) {
+      if (!seen[bin]) {
+        seen[bin] = true;
+        touched.push_back(bin);
+      }
+      values[bin] += sign;
+    });
   }
 }
 
-//! Add an event to a link if the nuclide and reaction are being tracked
-void add_event(SensitivityLink& link, int i_nuclide, SensitivityReaction rx,
-  double E, int sign)
+//! Add an event to a link if the nuclide and channel are being tracked
+void add_event(
+  SensitivityLink& link, int i_nuclide, int channel, double E, int sign)
 {
-  int i_rx = static_cast<int>(rx);
   if (!model::sensitivity_nuclides[i_nuclide] ||
-      !model::sensitivity_reactions[i_rx])
+      !model::sensitivity_channels[channel])
     return;
-  int32_t code = 1 + i_nuclide * N_SENSITIVITY_REACTIONS + i_rx;
+  int32_t code = 1 + i_nuclide * N_SENSITIVITY_CHANNELS + channel;
   link.push_back({sign * code, static_cast<float>(E)});
 }
 
-//! Sample the reaction channel of a pseudo-collision with a given nuclide
-//! using the same partition of the total cross section as the one used when
-//! sampling real collisions (see sample_neutron_reaction and scatter).
-SensitivityReaction sample_reaction_channel(
-  Particle& p, int i_nuclide, uint64_t* seed)
+//! Select a reaction among a list in proportion to its cross section
+//!
+//! \param[in] nuc Nuclide
+//! \param[in] micro Microscopic cross sections of the nuclide
+//! \param[in] indices Indices of the reactions in Nuclide::reactions_
+//! \param[in] xi Uniform random number in [0, 1)
+//! \return MT of the selected reaction, or C_NONE if there is none
+int select_reaction(const Nuclide& nuc, const NuclideMicroXS& micro,
+  const vector<int>& indices, double xi)
 {
+  if (indices.empty())
+    return C_NONE;
+  double sum = 0.0;
+  for (auto i : indices) {
+    sum += nuc.reactions_[i]->xs(micro);
+  }
+  double cutoff = xi * sum;
+  double prob = 0.0;
+  for (auto i : indices) {
+    prob += nuc.reactions_[i]->xs(micro);
+    if (prob > cutoff)
+      return nuc.reactions_[i]->mt_;
+  }
+  return nuc.reactions_[indices.back()]->mt_;
+}
+
+//! Sample the channel of a pseudo-collision with a given nuclide using the
+//! same partition of the total cross section as the one used when sampling
+//! real collisions (see sample_neutron_reaction and scatter). Within the
+//! inelastic and capture categories, a reaction is selected in proportion to
+//! its cross section.
+int sample_reaction_channel(Particle& p, int i_nuclide, uint64_t* seed)
+{
+  const auto& nuc = *data::nuclides[i_nuclide];
   const auto& micro = p.neutron_xs(i_nuclide);
   if (micro.elastic == CACHE_INVALID) {
-    data::nuclides[i_nuclide]->calculate_elastic_xs(p);
+    nuc.calculate_elastic_xs(p);
   }
 
   double cutoff = prn(seed) * micro.total;
   double scatter = micro.total - micro.absorption;
   if (cutoff < micro.elastic) {
-    return SensitivityReaction::ELASTIC;
+    return ELASTIC;
   } else if (cutoff < scatter) {
-    return SensitivityReaction::INELASTIC;
+    double xi = (cutoff - micro.elastic) / (scatter - micro.elastic);
+    int mt = select_reaction(nuc, micro, nuc.index_inelastic_scatter_, xi);
+    return mt == C_NONE ? N_LEVEL : sensitivity_channel(mt);
   } else if (cutoff < scatter + micro.fission) {
-    return SensitivityReaction::FISSION;
+    return N_FISSION;
   } else {
-    return SensitivityReaction::CAPTURE;
+    double capture = micro.absorption - micro.fission;
+    double xi =
+      capture > 0.0 ? (cutoff - scatter - micro.fission) / capture : 0.0;
+    int mt = select_reaction(
+      nuc, micro, model::sensitivity_capture_reactions[i_nuclide], xi);
+    return mt == C_NONE ? N_GAMMA : sensitivity_channel(mt);
   }
 }
 
@@ -128,6 +163,71 @@ SensitivityReaction sample_reaction_channel(
 //==============================================================================
 // Non-member functions
 //==============================================================================
+
+int sensitivity_channel(int mt)
+{
+  if (is_fission(mt))
+    return N_FISSION;
+  if (mt >= N_P0 && mt < N_D0)
+    return N_P;
+  if (mt >= N_D0 && mt < N_T0)
+    return N_D;
+  if (mt >= N_T0 && mt < N_3HE0)
+    return N_T;
+  if (mt >= N_3HE0 && mt < N_A0)
+    return N_3HE;
+  if (mt >= N_A0 && mt <= N_AC)
+    return N_A;
+  return mt;
+}
+
+vector<int> sensitivity_channels(const std::string& name)
+{
+  if (name == "nu-prompt")
+    return {SENSITIVITY_NU_PROMPT};
+  if (name == "nu-delayed")
+    return {SENSITIVITY_NU_DELAYED};
+  if (name == "chi-prompt")
+    return {SENSITIVITY_CHI_PROMPT};
+  if (name == "chi-delayed")
+    return {SENSITIVITY_CHI_DELAYED};
+  if (name == "elastic")
+    return {ELASTIC};
+  if (name == "fission")
+    return {N_FISSION};
+
+  vector<int> channels;
+  if (name == "inelastic") {
+    for (int mt = 1; mt < SENSITIVITY_NU_PROMPT; ++mt) {
+      if (mt != ELASTIC && is_inelastic_scatter(mt))
+        channels.push_back(mt);
+    }
+    return channels;
+  }
+  if (name == "capture") {
+    for (int mt = 1; mt < SENSITIVITY_NU_PROMPT; ++mt) {
+      if (is_disappearance(mt) && sensitivity_channel(mt) == mt)
+        channels.push_back(mt);
+    }
+    return channels;
+  }
+
+  // Reaction names accepted by tallies
+  int mt = reaction_mt(name);
+  if (mt == N_LEVEL) {
+    for (int level = N_N1; level <= N_NC; ++level)
+      channels.push_back(level);
+    return channels;
+  }
+  if (mt <= 0 || mt >= SENSITIVITY_NU_PROMPT || mt == TOTAL_XS ||
+      mt == N_NONELASTIC || mt == N_DISAPPEAR) {
+    throw std::invalid_argument {fmt::format(
+      "Sensitivities to reaction '{}' are not supported. Use 'total' or other "
+      "combined sensitivities computed from their components instead.",
+      name)};
+  }
+  return {sensitivity_channel(mt)};
+}
 
 int n_sensitivity_links(const SensitivityChain& chain)
 {
@@ -189,7 +289,18 @@ void check_sensitivity_settings()
 void initialize_sensitivity()
 {
   model::sensitivity_nuclides.assign(data::nuclides.size(), false);
-  model::sensitivity_reactions.fill(false);
+  model::sensitivity_channels.fill(false);
+
+  // Non-fission absorption reactions of each nuclide
+  model::sensitivity_capture_reactions.clear();
+  for (const auto& nuc : data::nuclides) {
+    auto& indices = model::sensitivity_capture_reactions.emplace_back();
+    for (int i = 0; i < nuc->reactions_.size(); ++i) {
+      const auto& rx = nuc->reactions_[i];
+      if (!rx->redundant_ && is_disappearance(rx->mt_))
+        indices.push_back(i);
+    }
+  }
   simulation::kinetics_reference.fill(0.0);
   kinetics_reference_sums.fill(0.0);
 
@@ -257,8 +368,9 @@ void initialize_sensitivity()
     for (auto i_nuclide : filt->nuclides()) {
       model::sensitivity_nuclides[i_nuclide] = true;
     }
-    for (auto rx : filt->reactions()) {
-      model::sensitivity_reactions[rx] = true;
+    for (const auto& channels : filt->channels()) {
+      for (auto channel : channels)
+        model::sensitivity_channels[channel] = true;
     }
   }
 
@@ -288,13 +400,14 @@ void free_memory_sensitivity()
   simulation::sensitivity_fission_bank.clear();
   simulation::sensitivity_temp_bank.clear();
   model::sensitivity_nuclides.clear();
-  model::sensitivity_reactions.fill(false);
+  model::sensitivity_channels.fill(false);
+  model::sensitivity_capture_reactions.clear();
 }
 
 void record_sensitivity_event(
-  Particle& p, int i_nuclide, SensitivityReaction rx, double E, int sign)
+  Particle& p, int i_nuclide, int channel, double E, int sign)
 {
-  add_event(p.sensitivity_events(), i_nuclide, rx, E, sign);
+  add_event(p.sensitivity_events(), i_nuclide, channel, E, sign);
 }
 
 void sample_sensitivity_flight(Particle& p, double distance)
@@ -357,14 +470,11 @@ void bank_sensitivity_fission_site(
   chain.insert(chain.end(), events.begin(), events.end());
   double E_in = p.E();
   bool delayed = site.delayed_group > 0;
-  add_event(chain, i_nuclide, SensitivityReaction::FISSION, E_in, 1);
+  add_event(chain, i_nuclide, N_FISSION, E_in, 1);
   add_event(chain, i_nuclide,
-    delayed ? SensitivityReaction::NU_DELAYED : SensitivityReaction::NU_PROMPT,
-    E_in, 1);
+    delayed ? SENSITIVITY_NU_DELAYED : SENSITIVITY_NU_PROMPT, E_in, 1);
   add_event(chain, i_nuclide,
-    delayed ? SensitivityReaction::CHI_DELAYED
-            : SensitivityReaction::CHI_PROMPT,
-    site.E, 1);
+    delayed ? SENSITIVITY_CHI_DELAYED : SENSITIVITY_CHI_PROMPT, site.E, 1);
   chain.push_back(sensitivity_link_end(site.delayed_group, p.lifetime()));
 }
 
@@ -408,11 +518,11 @@ void score_keff_sensitivity(const Particle& p, int i_tally, int score_index)
     model::tally_filters[tally.filters(0)].get());
   double wgt = p.wgt_last();
   for (; it != chain.end() && !it->is_link_end(); ++it) {
-    int bin = filt.get_bin(*it);
-    if (bin == C_NONE)
-      continue;
+    double score = it->sign() * wgt;
+    filt.for_each_bin(*it, [&](int bin) {
 #pragma omp atomic
-    tally.results_(bin, score_index, TallyResult::VALUE) += it->sign() * wgt;
+      tally.results_(bin, score_index, TallyResult::VALUE) += score;
+    });
   }
 }
 

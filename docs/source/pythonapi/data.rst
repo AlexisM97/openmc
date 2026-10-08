@@ -147,6 +147,25 @@ Resonance Data
     SpinGroup
     Unresolved
 
+Multigroup Covariances
+----------------------
+
+.. autosummary::
+    :toctree: generated
+    :nosignatures:
+    :template: myclass.rst
+
+    MultigroupCovariance
+    Uncertainty
+    UncertaintyContribution
+
+.. autosummary::
+    :toctree: generated
+    :nosignatures:
+    :template: myfunction.rst
+
+    propagate_uncertainty
+
 ACE Format
 ----------
 

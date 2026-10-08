@@ -2031,10 +2031,17 @@ class SensitivityFilter(Filter):
     nuclides : str or iterable of str
         Names of the perturbed nuclides (e.g., 'U235')
     reactions : str or iterable of str
-        Perturbed nuclear data. Valid values are listed in
-        :attr:`SensitivityFilter.REACTIONS`. The 'chi-prompt' and 'chi-delayed'
-        values correspond to unconstrained perturbations of the fission
-        spectrum in the outgoing energy group.
+        Perturbed nuclear data. The values listed in
+        :attr:`SensitivityFilter.REACTIONS` are 'elastic', 'inelastic' (all
+        non-elastic scattering including (n,xn) reactions), 'capture' (all
+        non-fission absorption), and 'fission', which form a partition of the
+        total cross section, as well as prompt and delayed fission neutron
+        multiplicities and spectra. The 'chi-prompt' and 'chi-delayed' values
+        correspond to unconstrained perturbations of the fission spectrum in
+        the outgoing energy group. Individual reactions can also be given by
+        their names in :data:`openmc.data.REACTION_MT` (e.g., '(n,2n)' or
+        '(n,gamma)'), where '(n,level)' includes all inelastic levels. Data
+        may overlap, e.g., 'inelastic' and '(n,2n)'.
     energies : Iterable of Real or str
         A list of energy boundaries in [eV]; each successive pair defines a
         group. Alternatively, the name of the group structure can be given as a
@@ -2062,6 +2069,13 @@ class SensitivityFilter(Filter):
 
     REACTIONS = ('elastic', 'inelastic', 'capture', 'fission', 'nu-prompt',
                  'nu-delayed', 'chi-prompt', 'chi-delayed')
+
+    #: Perturbed nuclear data matching the reactions for which covariances are
+    #: commonly available in evaluated nuclear data libraries
+    COVARIANCE_REACTIONS = (
+        '(n,elastic)', '(n,level)', '(n,2n)', '(n,3n)', 'fission',
+        '(n,gamma)', '(n,p)', '(n,a)', 'nu-prompt', 'nu-delayed', 'chi-prompt',
+        'chi-delayed')
 
     def __init__(self, nuclides, reactions, energies, filter_id=None):
         self.nuclides = nuclides
@@ -2101,7 +2115,13 @@ class SensitivityFilter(Filter):
             reactions = [reactions]
         cv.check_iterable_type('reactions', reactions, str)
         for rx in reactions:
-            cv.check_value('reaction', rx, self.REACTIONS)
+            mt = REACTION_MT.get(rx)
+            if rx not in self.REACTIONS and (
+                    mt is None or mt in (1, 3, 27, 101) or mt >= 1000):
+                raise ValueError(
+                    f"Unable to compute sensitivities to '{rx}'. Valid values "
+                    f"are {self.REACTIONS} or names of individual reactions "
+                    "in openmc.data.REACTION_MT.")
         if len(set(reactions)) != len(reactions):
             raise ValueError(
                 'Reactions on a sensitivity filter must be unique.')

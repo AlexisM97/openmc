@@ -191,6 +191,70 @@ Because delayed neutrons are rare, the statistical uncertainty of
 :math:`\beta_{\text{eff}}` sensitivities is much larger than that of
 :math:`k_{\text{eff}}` sensitivities for the same number of histories.
 
+-------------------------------------------
+Uncertainty due to nuclear data
+-------------------------------------------
+
+Sensitivity coefficients can be combined with covariances of nuclear data to
+estimate the uncertainty of :math:`k_{\text{eff}}`, :math:`\beta_{\text{eff}}`
+or :math:`\Lambda_{\text{eff}}` due to nuclear data with the sandwich rule,
+
+.. math::
+    :label: sandwich_rule
+
+    \left ( \frac{\sigma_R}{R} \right )^2 = \sum_{x,y} S_x^T C_{xy} S_y,
+
+where :math:`C_{xy}` is the relative covariance matrix between reactions
+:math:`x` and :math:`y` of a nuclide in the energy group structure of the
+sensitivity coefficients. This is the approach used by TSUNAMI-IP and Whisper.
+
+Multigroup covariances are processed from ENDF-6 evaluations with the ERRORR
+module of `NJOY <https://www.njoy21.io/NJOY2016/>`_ using
+:meth:`openmc.data.MultigroupCovariance.from_endf`, which handles cross
+sections (MF33), fission neutron multiplicities (MF31) and fission spectra
+(MF35). Processing takes a few minutes per nuclide, so the results can be saved
+with :meth:`~openmc.data.MultigroupCovariance.export_to_hdf5` and reused::
+
+    cov = openmc.data.MultigroupCovariance.from_endf(
+        'n-092_U_235.endf', energies='ECCO-33')
+    cov.export_to_hdf5('covariances.h5')
+
+Covariances are given for individual reactions, so the sensitivity
+coefficients must be tallied for the same reactions. The names 'elastic',
+'fission', the fission neutron multiplicities and spectra, and individual
+reaction names such as '(n,level)' (all inelastic levels, MT 4), '(n,2n)',
+'(n,3n)', '(n,gamma)', '(n,p)' and '(n,a)' are matched to covariances, while
+the lumped 'inelastic' and 'capture' sensitivities are not. The constant
+:attr:`openmc.SensitivityFilter.COVARIANCE_REACTIONS` lists suitable
+reactions::
+
+    model.add_keff_sensitivity_tallies(
+        ['U235', 'U238'], 'ECCO-33',
+        openmc.SensitivityFilter.COVARIANCE_REACTIONS)
+
+    ...
+
+    with openmc.StatePoint(output_path) as sp:
+        _, coefficients = sp.get_keff_sensitivities()
+    covariances = {
+        nuc: openmc.data.MultigroupCovariance.from_hdf5('covariances.h5', nuc)
+        for nuc in ['U235', 'U238']
+    }
+    result = openmc.data.propagate_uncertainty(coefficients, covariances)
+    print(f'Uncertainty of k-eff: {100*result.std_dev:.3f}%')
+    for c in result.contributions[:10]:
+        print(c.nuclide, c.reaction1, c.reaction2, c.std_dev)
+
+A non-redundant set of reactions is used for each nuclide: total and
+nonelastic cross sections are excluded, inelastic levels are represented by
+the total inelastic cross section when its covariances are available, and the
+total fission neutron multiplicity is used instead of its prompt and delayed
+components. :class:`openmc.data.Uncertainty` lists the reactions that have
+covariances but no sensitivity coefficients and vice versa, so that missing
+contributions can be identified. Covariances between different nuclides are
+not used, and the statistical uncertainty of the sensitivity coefficients is
+not propagated.
+
 -----------
 Limitations
 -----------
@@ -199,7 +263,8 @@ Limitations
   :math:`\beta_{\text{eff}}`, and :math:`\Lambda_{\text{eff}}`.
   Sensitivities of group-wise :math:`\beta_{\text{eff}}` are not supported.
 - Perturbations of scattering angular and secondary energy distributions are
-  not supported.
+  not supported, so the uncertainty due to angular distribution covariances
+  (MF34) is not included.
 - The method cannot be used in multigroup mode, in fixed source calculations,
   with a shared secondary bank, or with NCrystal materials.
 

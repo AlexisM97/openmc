@@ -41,17 +41,39 @@ public:
 
   std::string text_label(int bin) const override;
 
-  //! Determine the filter bin corresponding to a sensitivity event
+  //! Call a function for each filter bin corresponding to a sensitivity
+  //! event. An event may correspond to several bins when the perturbed
+  //! nuclear data overlap, e.g., 'inelastic' and '(n,2n)'.
   //!
   //! \param[in] event Event recorded in a neutron history
-  //! \return Filter bin or C_NONE if the event is not binned by this filter
-  int get_bin(const SensitivityEvent& event) const;
+  //! \param[in] f Function called with each bin
+  template<typename F>
+  void for_each_bin(const SensitivityEvent& event, F&& f) const
+  {
+    int i_nuclide = event.nuclide();
+    if (i_nuclide >= nuclide_bin_.size())
+      return;
+    int i_nuc_bin = nuclide_bin_[i_nuclide];
+    if (i_nuc_bin == C_NONE)
+      return;
+    const auto& positions = channel_positions_[event.channel()];
+    if (positions.empty())
+      return;
+    int group = this->group(event.E);
+    if (group == C_NONE)
+      return;
+    int n_groups = energies_.size() - 1;
+    for (auto i_rx : positions) {
+      f((i_nuc_bin * reactions_.size() + i_rx) * n_groups + group);
+    }
+  }
 
   //----------------------------------------------------------------------------
   // Accessors
 
   const vector<int>& nuclides() const { return nuclides_; }
-  const vector<int>& reactions() const { return reactions_; }
+  const vector<std::string>& reactions() const { return reactions_; }
+  const vector<vector<int>>& channels() const { return channels_; }
   const vector<double>& energies() const { return energies_; }
 
   void set_nuclides(const vector<std::string>& nuclides);
@@ -62,15 +84,23 @@ private:
   //! Update the number of bins and lookup tables
   void update();
 
+  //! Determine the energy group of an energy
+  //!
+  //! \param[in] E Energy in [eV]
+  //! \return Energy group or C_NONE if outside of the group structure
+  int group(double E) const;
+
   //----------------------------------------------------------------------------
   // Data members
 
-  vector<int> nuclides_;    //!< Indices in data::nuclides
-  vector<int> reactions_;   //!< Perturbed reactions (SensitivityReaction)
-  vector<double> energies_; //!< Energy group boundaries in [eV]
+  vector<int> nuclides_;          //!< Indices in data::nuclides
+  vector<std::string> reactions_; //!< Names of perturbed nuclear data
+  vector<vector<int>> channels_;  //!< Channels of each perturbed data
+  vector<double> energies_;       //!< Energy group boundaries in [eV]
 
   vector<int> nuclide_bin_; //!< Position of each nuclide in nuclides_
-  array<int, N_SENSITIVITY_REACTIONS> reaction_bin_; //!< Position in reactions_
+  //! Positions in reactions_ that include each channel
+  vector<vector<int>> channel_positions_;
 };
 
 } // namespace openmc

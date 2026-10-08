@@ -216,6 +216,7 @@ std::unordered_map<int, std::string> REACTION_NAME_MAP {
   {ELASTIC, "(n,elastic)"},
   {N_NONELASTIC, "(n,nonelastic)"},
   {N_LEVEL, "(n,level)"},
+  {MISC, "(n,misc)"},
   {N_2ND, "(n,2nd)"},
   {N_2N, "(n,2n)"},
   {N_3N, "(n,3n)"},

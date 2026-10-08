@@ -199,3 +199,38 @@ def test_kinetics_exceptions(run_in_tmpdir, model, case):
 
     with pytest.raises(RuntimeError):
         model.run()
+
+
+def test_filter_reaction_names():
+    f = openmc.SensitivityFilter(
+        'U235', openmc.SensitivityFilter.COVARIANCE_REACTIONS, ENERGIES)
+    assert '(n,gamma)' in f.reactions
+    for name in ['total', '(n,total)', '(n,nonelastic)', '(n,disappear)',
+                 'not-a-reaction']:
+        with pytest.raises(ValueError):
+            openmc.SensitivityFilter('U235', [name], ENERGIES)
+
+
+def test_reaction_decomposition(run_in_tmpdir, model):
+    # Sensitivities to individual reactions add up exactly to those of the
+    # lumped inelastic and capture reactions since they come from the same
+    # events
+    reactions = ['inelastic', 'capture', '(n,level)', '(n,2n)', '(n,3n)',
+                 '(n,4n)', '(n,gamma)', '(n,p)', '(n,a)', '(n,elastic)',
+                 'elastic']
+    model.add_keff_sensitivity_tallies('U235', ENERGIES, reactions)
+    sp_file = model.run()
+    with openmc.StatePoint(sp_file) as sp:
+        _, c = sp.get_keff_sensitivities()
+
+    def nominal(x):
+        return np.array([v.n for v in x])
+
+    inelastic = sum(nominal(c['U235', rx]) for rx in
+                    ['(n,level)', '(n,2n)', '(n,3n)', '(n,4n)'])
+    assert np.allclose(inelastic, nominal(c['U235', 'inelastic']))
+    capture = sum(nominal(c['U235', rx]) for rx in
+                  ['(n,gamma)', '(n,p)', '(n,a)'])
+    assert np.allclose(capture, nominal(c['U235', 'capture']))
+    assert np.allclose(nominal(c['U235', 'elastic']),
+                       nominal(c['U235', '(n,elastic)']))
