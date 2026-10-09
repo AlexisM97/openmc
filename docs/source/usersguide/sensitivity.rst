@@ -136,6 +136,29 @@ Profiles for the total, scattering, and capture cross sections require the
 profiles of individual reactions require the corresponding reaction names
 (e.g., '(n,level)', '(n,2n)', '(n,gamma)').
 
+The fission spectrum profile is written unconstrained by default, as assumed
+by TSUNAMI-IP; ``chi='constrained'`` writes the constrained profile used by
+MCNP and Whisper instead.
+
+Similarity of a system with an experiment can be assessed with the
+:meth:`openmc.SensitivityDataFile.similarity` method, which computes the
+indices of TSUNAMI-IP: the correlation coefficient :math:`c_k` of the two
+responses due to nuclear data uncertainties, the cosine similarity :math:`E`
+of the sensitivity vectors, and the coverage :math:`G` of the fission,
+capture, and scattering sensitivities of the application by those of the
+experiment::
+
+    covariances = {nuc: openmc.data.MultigroupCovariance.from_hdf5(
+        'covariances.h5', nuc) for nuc in ('U235', 'U238', 'H1', 'O16')}
+    s = sdf.similarity(ref, covariances)
+    print(s.c_k, s.E, s.G, s.E_parts['fission'])
+
+The uncertainties of the indices are propagated to first order from the
+statistical uncertainties of the sensitivities. Both files should use the
+same convention for the fission spectrum profile and the same group
+structure; the sensitivities are converted to the group structure of the
+covariances when it differs.
+
 -------------------------------------------
 Sensitivity of kinetics parameters
 -------------------------------------------

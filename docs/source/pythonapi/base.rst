@@ -214,6 +214,7 @@ Post-processing
    openmc.ParticleTrack
    openmc.SensitivityDataFile
    openmc.SensitivityProfile
+   openmc.SimilarityIndices
    openmc.StatePoint
    openmc.Summary
    openmc.Track
