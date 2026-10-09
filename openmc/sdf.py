@@ -644,8 +644,8 @@ class SensitivityDataFile:
                  f'{self.num_groups:10d}   number of neutron groups',
                  f'{len(self.profiles):10d}   number of sensitivity profiles'
                  f'{len(self.profiles):12d} are region integrated',
-                 f'{self.keff:10.6f} +/- {self.keff_std_dev:10.6f} k-eff from '
-                 'the forward case',
+                 f'{self.keff:14.6E} +/- {self.keff_std_dev:14.6E} k-eff '
+                 'from the forward case',
                  'energy boundaries:']
         lines += block(self.energies[::-1])
 
