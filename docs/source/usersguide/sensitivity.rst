@@ -119,6 +119,23 @@ fission spectrum sensitivities::
     number of nuclides and reactions that are perturbed, since only events
     for the perturbed nuclides and reactions are recorded.
 
+Sensitivity coefficients can be written to a sensitivity data file (SDF) in
+the format used by the TSUNAMI tools of SCALE, for instance to assess the
+similarity of a system with benchmark experiments with TSUNAMI-IP. Sensitivity
+data files from TSUNAMI or other codes can also be read for comparison::
+
+    sdf = openmc.SensitivityDataFile.from_coefficients(
+        coefficients, energies, sp.keff, title='My system')
+    sdf.export_to_file('my_system.sdf')
+
+    ref = openmc.SensitivityDataFile.from_file('reference.sdf')
+    print(ref.get('U235', 'fission').integral)
+
+Profiles for the total, scattering, and capture cross sections require the
+'elastic', 'inelastic', 'capture', and 'fission' data to be tallied, while
+profiles of individual reactions require the corresponding reaction names
+(e.g., '(n,level)', '(n,2n)', '(n,gamma)').
+
 -------------------------------------------
 Sensitivity of kinetics parameters
 -------------------------------------------

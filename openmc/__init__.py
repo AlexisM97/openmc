@@ -27,6 +27,7 @@ from openmc.tallies import *
 from openmc.mgxs_library import *
 from openmc.executor import *
 from openmc.statepoint import *
+from openmc.sdf import *
 from openmc.summary import *
 from openmc.particle_restart import *
 from openmc.mixin import *
