@@ -59,13 +59,16 @@ vector<int> sensitivity_channels(const std::string& name);
 //! whether the event increases or decreases the history probability.
 //!
 //! The end of a link in a chain of ancestors is marked by a special event whose
-//! code stores the delayed group of the fission neutron produced at the end of
-//! the link and whose energy field stores the lifetime of the parent neutron
-//! when it produced the fission neutron.
+//! code stores the fissioned nuclide and the delayed group of the fission
+//! neutron produced at the end of the link and whose energy field stores the
+//! lifetime of the parent neutron when it produced the fission neutron.
 //==============================================================================
 
 constexpr int32_t SENSITIVITY_LINK_END_CODE {INT32_MIN};
-constexpr int32_t SENSITIVITY_LINK_END_RANGE {64}; //!< codes reserved
+constexpr int32_t SENSITIVITY_MAX_DELAYED_GROUPS {16};
+//! Codes reserved for link ends, enough for 2^22 nuclides
+constexpr int32_t SENSITIVITY_LINK_END_RANGE {
+  (1 << 22) * SENSITIVITY_MAX_DELAYED_GROUPS};
 
 struct SensitivityEvent {
   int32_t code; //!< sign * (1 + i_nuclide * N_SENSITIVITY_CHANNELS + channel)
@@ -81,7 +84,15 @@ struct SensitivityEvent {
   int channel() const { return index() % N_SENSITIVITY_CHANNELS; }
 
   //! Delayed group of the fission neutron produced at the end of a link
-  int delayed_group() const { return code - SENSITIVITY_LINK_END_CODE; }
+  int delayed_group() const
+  {
+    return (code - SENSITIVITY_LINK_END_CODE) % SENSITIVITY_MAX_DELAYED_GROUPS;
+  }
+  //! Index of the nuclide that fissioned at the end of a link
+  int fission_nuclide() const
+  {
+    return (code - SENSITIVITY_LINK_END_CODE) / SENSITIVITY_MAX_DELAYED_GROUPS;
+  }
   //! Lifetime of the parent neutron at the end of a link in [s]
   double lifetime() const { return E; }
 };
@@ -96,13 +107,16 @@ using SensitivityChain = vector<SensitivityEvent>;
 
 //! Create the marker for the end of a link
 //!
+//! \param[in] i_nuclide Index of the nuclide that fissioned
 //! \param[in] delayed_group Delayed group of the fission neutron produced
 //! \param[in] lifetime Lifetime of the parent neutron in [s]
 //! \return End marker
-inline SensitivityEvent sensitivity_link_end(int delayed_group, double lifetime)
+inline SensitivityEvent sensitivity_link_end(
+  int i_nuclide, int delayed_group, double lifetime)
 {
-  return {
-    SENSITIVITY_LINK_END_CODE + delayed_group, static_cast<float>(lifetime)};
+  return {SENSITIVITY_LINK_END_CODE +
+            i_nuclide * SENSITIVITY_MAX_DELAYED_GROUPS + delayed_group,
+    static_cast<float>(lifetime)};
 }
 
 //! Number of links in a chain
@@ -147,6 +161,10 @@ extern array<bool, N_SENSITIVITY_CHANNELS> sensitivity_channels;
 //! each nuclide, used to resolve capture pseudo-collisions by reaction
 extern vector<vector<int>> sensitivity_capture_reactions;
 
+//! Decay constants in [1/s] of the delayed neutron precursor groups of each
+//! nuclide, indexed by delayed group (index 0 is unused)
+extern vector<vector<double>> sensitivity_decay_rates;
+
 } // namespace model
 
 namespace simulation {
@@ -161,10 +179,11 @@ extern vector<SensitivityChain> sensitivity_fission_bank;
 //! distributed to the source bank
 extern vector<SensitivityChain> sensitivity_temp_bank;
 
-//! Reference values of the delayed neutron fraction and ancestor lifetime
-//! (in [s]) estimated during inactive generations. The scores of kinetics
+//! Reference values of the delayed neutron fraction, ancestor lifetime (in
+//! [s]), and delayed fraction weighted by the precursor decay constant (in
+//! [1/s]) estimated during inactive generations. The scores of kinetics
 //! parameter sensitivities are centered on these values to reduce variance.
-extern array<double, 2> kinetics_reference;
+extern array<double, 3> kinetics_reference;
 
 } // namespace simulation
 

@@ -702,6 +702,8 @@ void Tally::set_scores(const vector<std::string>& scores)
     case SCORE_POPULATION_SENSITIVITY_NUM:
     case SCORE_BETA_SENSITIVITY_NUM:
     case SCORE_LIFETIME_SENSITIVITY_NUM:
+    case SCORE_KINETICS_DECAY_RATE:
+    case SCORE_DECAY_RATE_SENSITIVITY_NUM:
       type_ = TallyType::BIRTH;
       estimator_ = TallyEstimator::ANALOG;
       break;

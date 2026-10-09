@@ -23,7 +23,9 @@ KeffSensitivities = namedtuple(
 KineticsSensitivities = namedtuple(
     "KineticsSensitivities",
     ["energies", "beta_effective", "generation_time", "beta_coefficients",
-     "generation_time_coefficients"])
+     "generation_time_coefficients", "decay_constant",
+     "decay_constant_coefficients"],
+    defaults=[None, None])
 
 
 def _sensitivity_coefficients(values, sens_filter, spectrum_tally=None):
@@ -881,8 +883,13 @@ class StatePoint:
         KineticsSensitivities
             A named tuple containing the energy group boundaries in [eV], the
             effective delayed neutron fraction, the effective generation time
-            in [s], and dictionaries mapping (nuclide, reaction) to arrays of
-            sensitivity coefficients of each parameter per energy group.
+            in [s], dictionaries mapping (nuclide, reaction) to arrays of
+            sensitivity coefficients of each parameter per energy group, and
+            the effective precursor decay constant in [1/s] with its
+            coefficients. The effective decay constant is the mean decay
+            constant of the precursors of delayed neutrons weighted by their
+            importance, as computed by Serpent. It is None for statepoints
+            without the corresponding tallies.
 
         """
         scalar_tally = None
@@ -904,6 +911,9 @@ class StatePoint:
         population = get_ufloat(scalar_tally, 'kinetics-population')[0]
         delayed = get_ufloat(scalar_tally, 'kinetics-delayed')[0]
         lifetime = get_ufloat(scalar_tally, 'kinetics-lifetime')[0]
+        has_decay = 'kinetics-decay-rate' in scalar_tally.scores
+        if has_decay:
+            decay = get_ufloat(scalar_tally, 'kinetics-decay-rate')[0]
         beta_effective = delayed / population
         mean_lifetime = lifetime / population
         generation_time = mean_lifetime / self.keff
@@ -913,8 +923,8 @@ class StatePoint:
         # estimates of the parameters. The statistical uncertainty is that of
         # the centered numerators: the uncertainties of the correction terms
         # are strongly anticorrelated with the numerators and are omitted.
-        beta_ref, lifetime_ref = self._f['tallies'].attrs[
-            'kinetics_sensitivity_reference']
+        reference = self._f['tallies'].attrs['kinetics_sensitivity_reference']
+        beta_ref, lifetime_ref = reference[:2]
         sens_filter = binned_tally.find_filter(openmc.SensitivityFilter)
         pop_num = nominal_values(
             get_ufloat(binned_tally, 'population-sensitivity-numerator'))
@@ -936,9 +946,25 @@ class StatePoint:
             s_beta.reshape(sens_filter.shape), sens_filter, spectrum_tally)
         gen_time_coefficients = _sensitivity_coefficients(
             s_gen_time, sens_filter, spectrum_tally)
+
+        # The effective decay constant is the mean decay constant of the
+        # precursors of delayed ancestors, E[X lambda]/E[X]
+        decay_constant = decay_coefficients = None
+        if has_decay:
+            decay_constant = decay / delayed
+            decay_ref = reference[2]
+            decay_num = get_ufloat(binned_tally,
+                                   'decay-rate-sensitivity-numerator')
+            s_decay = ((decay_num + (decay_ref - (decay/population).n)*pop_num)
+                       / decay - s_beta)
+            decay_coefficients = _sensitivity_coefficients(
+                s_decay.reshape(sens_filter.shape), sens_filter,
+                spectrum_tally)
+
         return KineticsSensitivities(
             sens_filter.energies, beta_effective, generation_time,
-            beta_coefficients, gen_time_coefficients)
+            beta_coefficients, gen_time_coefficients, decay_constant,
+            decay_coefficients)
 
     def _keff_sensitivity_values(self):
         """Return the sensitivity filter and k-eff sensitivity coefficients

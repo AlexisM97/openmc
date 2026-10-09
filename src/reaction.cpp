@@ -211,6 +211,8 @@ std::unordered_map<int, std::string> REACTION_NAME_MAP {
   {SCORE_POPULATION_SENSITIVITY_NUM, "population-sensitivity-numerator"},
   {SCORE_BETA_SENSITIVITY_NUM, "beta-sensitivity-numerator"},
   {SCORE_LIFETIME_SENSITIVITY_NUM, "lifetime-sensitivity-numerator"},
+  {SCORE_KINETICS_DECAY_RATE, "kinetics-decay-rate"},
+  {SCORE_DECAY_RATE_SENSITIVITY_NUM, "decay-rate-sensitivity-numerator"},
   // Normal ENDF-based reactions
   {TOTAL_XS, "(n,total)"},
   {ELASTIC, "(n,elastic)"},

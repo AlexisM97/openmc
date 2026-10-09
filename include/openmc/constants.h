@@ -355,7 +355,9 @@ enum TallyScore {
   SCORE_KINETICS_LIFETIME = -24,    // ... weighted by ancestor lifetime
   SCORE_POPULATION_SENSITIVITY_NUM = -25, // population sensitivity numerator
   SCORE_BETA_SENSITIVITY_NUM = -26,       // beta-eff sensitivity numerator
-  SCORE_LIFETIME_SENSITIVITY_NUM = -27    // lifetime sensitivity numerator
+  SCORE_LIFETIME_SENSITIVITY_NUM = -27,   // lifetime sensitivity numerator
+  SCORE_KINETICS_DECAY_RATE = -28,        // ... weighted by precursor decay
+  SCORE_DECAY_RATE_SENSITIVITY_NUM = -29  // decay constant sensitivity num.
 };
 
 // Global tally parameters

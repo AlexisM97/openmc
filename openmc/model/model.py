@@ -394,11 +394,12 @@ class Model:
         reactions: Sequence[str] | None = None,
     ):
         """Add tallies for calculating the sensitivity coefficients of the
-        effective delayed neutron fraction and generation time.
+        effective delayed neutron fraction, generation time, and precursor
+        decay constant.
 
         This method adds the tallies needed to compute the effective delayed
-        neutron fraction, the effective generation time, and their sensitivity
-        coefficients to nuclear data using the collision history-based method.
+        neutron fraction, the effective generation time, the effective
+        precursor decay constant, and their sensitivity coefficients to nuclear data using the collision history-based method.
         The tallies for k-effective sensitivity coefficients are also added
         since they are needed for the generation time. After a model is run,
         the sensitivity coefficients can be determined through the
@@ -424,14 +425,15 @@ class Model:
 
         scalar_tally = openmc.Tally(name='kinetics parameters')
         scalar_tally.scores = ['kinetics-population', 'kinetics-delayed',
-                               'kinetics-lifetime']
+                               'kinetics-lifetime', 'kinetics-decay-rate']
         self.tallies.append(scalar_tally)
 
         binned_tally = openmc.Tally(name='kinetics sensitivity numerators')
         binned_tally.filters = [sens_filter]
         binned_tally.scores = ['population-sensitivity-numerator',
                                'beta-sensitivity-numerator',
-                               'lifetime-sensitivity-numerator']
+                               'lifetime-sensitivity-numerator',
+                               'decay-rate-sensitivity-numerator']
         self.tallies.append(binned_tally)
 
     # TODO: This should also be incorporated into lower-level calls in

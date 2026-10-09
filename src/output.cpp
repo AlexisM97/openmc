@@ -663,6 +663,8 @@ const std::unordered_map<int, const char*> score_names = {
   {SCORE_POPULATION_SENSITIVITY_NUM, "Population sensitivity numerator"},
   {SCORE_BETA_SENSITIVITY_NUM, "Beta-eff sensitivity numerator"},
   {SCORE_LIFETIME_SENSITIVITY_NUM, "Lifetime sensitivity numerator"},
+  {SCORE_KINETICS_DECAY_RATE, "Kinetics precursor decay constant"},
+  {SCORE_DECAY_RATE_SENSITIVITY_NUM, "Decay constant sensitivity numerator"},
 };
 
 //! Create an ASCII output file showing all tally results.

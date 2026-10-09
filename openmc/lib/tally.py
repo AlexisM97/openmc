@@ -111,6 +111,7 @@ _SCORES = {
     -22: 'kinetics-population', -23: 'kinetics-delayed',
     -24: 'kinetics-lifetime', -25: 'population-sensitivity-numerator',
     -26: 'beta-sensitivity-numerator', -27: 'lifetime-sensitivity-numerator',
+    -28: 'kinetics-decay-rate', -29: 'decay-rate-sensitivity-numerator',
 }
 _ESTIMATORS = {
     0: 'analog', 1: 'tracklength', 2: 'collision'

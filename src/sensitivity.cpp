@@ -33,6 +33,7 @@ namespace model {
 vector<char> sensitivity_nuclides;
 array<bool, N_SENSITIVITY_CHANNELS> sensitivity_channels {};
 vector<vector<int>> sensitivity_capture_reactions;
+vector<vector<double>> sensitivity_decay_rates;
 
 } // namespace model
 
@@ -41,7 +42,7 @@ namespace simulation {
 vector<SensitivityChain> sensitivity_source_bank;
 vector<SensitivityChain> sensitivity_fission_bank;
 vector<SensitivityChain> sensitivity_temp_bank;
-array<double, 2> kinetics_reference {};
+array<double, 3> kinetics_reference {};
 
 } // namespace simulation
 
@@ -51,9 +52,9 @@ array<double, 2> kinetics_reference {};
 
 namespace {
 
-//! Weighted sums of the population, delayed indicator, and lifetime of the
-//! ancestors of source neutrons during inactive generations
-array<double, 3> kinetics_reference_sums {};
+//! Weighted sums of the population, delayed indicator, lifetime, and decay
+//! constant of the ancestors of source neutrons during inactive generations
+array<double, 4> kinetics_reference_sums {};
 
 //! Determine the positions of the end markers of the links in a chain
 //!
@@ -253,9 +254,11 @@ bool is_kinetics_score(int score)
   case SCORE_KINETICS_POPULATION:
   case SCORE_KINETICS_DELAYED:
   case SCORE_KINETICS_LIFETIME:
+  case SCORE_KINETICS_DECAY_RATE:
   case SCORE_POPULATION_SENSITIVITY_NUM:
   case SCORE_BETA_SENSITIVITY_NUM:
   case SCORE_LIFETIME_SENSITIVITY_NUM:
+  case SCORE_DECAY_RATE_SENSITIVITY_NUM:
     return true;
   default:
     return false;
@@ -301,6 +304,20 @@ void initialize_sensitivity()
         indices.push_back(i);
     }
   }
+  model::sensitivity_decay_rates.clear();
+  for (const auto& nuc : data::nuclides) {
+    auto& rates = model::sensitivity_decay_rates.emplace_back();
+    if (nuc->fission_rx_.empty())
+      continue;
+    if (nuc->n_precursor_ >= SENSITIVITY_MAX_DELAYED_GROUPS) {
+      fatal_error(fmt::format("{} has more than {} delayed neutron groups.",
+        nuc->name_, SENSITIVITY_MAX_DELAYED_GROUPS - 1));
+    }
+    const auto& products = nuc->fission_rx_[0]->products_;
+    rates.assign(nuc->n_precursor_ + 1, 0.0);
+    for (int g = 1; g <= nuc->n_precursor_ && g < products.size(); ++g)
+      rates[g] = products[g].decay_rate_;
+  }
   simulation::kinetics_reference.fill(0.0);
   kinetics_reference_sums.fill(0.0);
 
@@ -311,10 +328,13 @@ void initialize_sensitivity()
     for (auto score : tally->scores_) {
       has_binned |= (score == SCORE_POPULATION_SENSITIVITY_NUM ||
                      score == SCORE_BETA_SENSITIVITY_NUM ||
-                     score == SCORE_LIFETIME_SENSITIVITY_NUM);
+                     score == SCORE_LIFETIME_SENSITIVITY_NUM ||
+                     score == SCORE_DECAY_RATE_SENSITIVITY_NUM);
       has_scalar |=
         (score == SCORE_KINETICS_POPULATION ||
-          score == SCORE_KINETICS_DELAYED || score == SCORE_KINETICS_LIFETIME);
+          score == SCORE_KINETICS_DELAYED ||
+          score == SCORE_KINETICS_LIFETIME ||
+          score == SCORE_KINETICS_DECAY_RATE);
     }
     if (!has_keff && !has_binned && !has_scalar)
       continue;
@@ -475,7 +495,8 @@ void bank_sensitivity_fission_site(
     delayed ? SENSITIVITY_NU_DELAYED : SENSITIVITY_NU_PROMPT, E_in, 1);
   add_event(chain, i_nuclide,
     delayed ? SENSITIVITY_CHI_DELAYED : SENSITIVITY_CHI_PROMPT, site.E, 1);
-  chain.push_back(sensitivity_link_end(site.delayed_group, p.lifetime()));
+  chain.push_back(
+    sensitivity_link_end(i_nuclide, site.delayed_group, p.lifetime()));
 }
 
 void save_sensitivity_secondary(Particle& p)
@@ -541,8 +562,13 @@ void score_kinetics_sensitivity(const Particle& p)
   // at the end of the link that produced it, and its lifetime is stored at
   // the end of the next link, consistent with the IFP scores.
   int n_gen = settings::ifp_n_generation;
-  double delayed =
-    chain[ends[n_links - 1 - n_gen]].delayed_group() > 0 ? 1.0 : 0.0;
+  const auto& birth = chain[ends[n_links - 1 - n_gen]];
+  int group = birth.delayed_group();
+  double delayed = group > 0 ? 1.0 : 0.0;
+  // Decay constant of the precursor of a delayed ancestor
+  double decay_rate =
+    group > 0 ? model::sensitivity_decay_rates[birth.fission_nuclide()][group]
+              : 0.0;
   double lifetime = chain[ends[n_links - n_gen]].lifetime();
   double wgt = p.wgt();
 
@@ -554,12 +580,14 @@ void score_kinetics_sensitivity(const Particle& p)
       kinetics_reference_sums[0] += wgt;
       kinetics_reference_sums[1] += wgt * delayed;
       kinetics_reference_sums[2] += wgt * lifetime;
+      kinetics_reference_sums[3] += wgt * decay_rate;
     }
     return;
   }
 
   double beta_ref = simulation::kinetics_reference[0];
   double lifetime_ref = simulation::kinetics_reference[1];
+  double decay_ref = simulation::kinetics_reference[2];
 
   thread_local vector<int> values;
   thread_local vector<char> seen;
@@ -580,6 +608,9 @@ void score_kinetics_sensitivity(const Particle& p)
           break;
         case SCORE_KINETICS_LIFETIME:
           score = wgt * lifetime;
+          break;
+        case SCORE_KINETICS_DECAY_RATE:
+          score = wgt * decay_rate;
           break;
         }
 #pragma omp atomic
@@ -608,6 +639,9 @@ void score_kinetics_sensitivity(const Particle& p)
       case SCORE_LIFETIME_SENSITIVITY_NUM:
         coeff = wgt * (lifetime - lifetime_ref);
         break;
+      case SCORE_DECAY_RATE_SENSITIVITY_NUM:
+        coeff = wgt * (decay_rate - decay_ref);
+        break;
       }
       for (auto bin : touched) {
         if (values[bin] == 0)
@@ -629,6 +663,7 @@ void finalize_kinetics_reference()
   if (sums[0] > 0.0) {
     simulation::kinetics_reference[0] = sums[1] / sums[0];
     simulation::kinetics_reference[1] = sums[2] / sums[0];
+    simulation::kinetics_reference[2] = sums[3] / sums[0];
   }
 }
 

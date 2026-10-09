@@ -227,6 +227,22 @@ time. The ``kinetics-population``, ``kinetics-delayed`` and
 which require a :class:`openmc.SensitivityFilter`, estimate the numerators of
 Eq. :eq:`kinetics_sensitivity`.
 
+The effective decay constant of the delayed neutron precursors, as computed
+by Serpent, is also obtained. It is the mean decay constant
+:math:`\lambda_d` of the precursors of delayed ancestors, :math:`\lambda_{
+\text{eff}} = E[X \lambda_d] / E[X]`, and its sensitivity is
+
+.. math::
+
+    S_{\lambda,x} = \frac{E[X \lambda_d D_x]}{E[X \lambda_d]} -
+    \frac{E[X D_x]}{E[X]},
+
+estimated with the ``kinetics-decay-rate`` and
+``decay-rate-sensitivity-numerator`` scores::
+
+    print(result.decay_constant)
+    s_decay = result.decay_constant_coefficients['U235', 'nu-delayed']
+
 Because delayed neutrons are rare, the statistical uncertainty of
 :math:`\beta_{\text{eff}}` sensitivities is much larger than that of
 :math:`k_{\text{eff}}` sensitivities for the same number of histories.
