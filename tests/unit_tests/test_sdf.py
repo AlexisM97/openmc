@@ -80,3 +80,19 @@ def test_nuclide_names():
     assert _openmc_nuclide_name('u-235') == 'U235'
     assert _openmc_nuclide_name('fe') == 'Fe0'
     assert _openmc_nuclide_name('h-1') == 'H1'
+
+
+def test_chi_convention():
+    coefficients = {
+        ('U235', 'chi-prompt'): np.array([0.3, 0.5, 0.15]),
+        ('U235', 'chi-delayed'): np.array([0.01, 0.0, 0.0]),
+        ('U235', 'chi-prompt-constrained'): np.array([0.1, 0.0, -0.1]),
+    }
+    c = openmc.SensitivityDataFile.from_coefficients(coefficients, ENERGIES)
+    u = openmc.SensitivityDataFile.from_coefficients(
+        coefficients, ENERGIES, chi='unconstrained')
+    assert c.get('U235', 'chi').integral == pytest.approx(0.0)
+    assert u.get('U235', 'chi').integral == pytest.approx(0.96)
+    with pytest.raises(ValueError):
+        openmc.SensitivityDataFile.from_coefficients(
+            coefficients, ENERGIES, chi='other')

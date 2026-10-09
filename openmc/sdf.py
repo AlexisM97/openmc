@@ -174,7 +174,8 @@ class SensitivityDataFile:
 
     @classmethod
     def from_coefficients(cls, coefficients: Mapping, energies, keff=None,
-                          title: str = 'OpenMC sensitivity data'):
+                          title: str = 'OpenMC sensitivity data',
+                          chi: str = 'constrained'):
         """Create a sensitivity data file from OpenMC sensitivity coefficients.
 
         Profiles are written for each nuclide for the total, scattering,
@@ -197,6 +198,13 @@ class SensitivityDataFile:
             Multiplication factor of the system
         title : str, optional
             Title of the file
+        chi : {'constrained', 'unconstrained'}
+            Whether the fission spectrum profile preserves the normalization
+            of the spectrum, in which case it integrates to zero, or is the
+            unconstrained sensitivity, which integrates to the sensitivity to
+            nubar. Both conventions are found in sensitivity data files:
+            MCNP and Whisper profiles are constrained, while multigroup
+            TSUNAMI profiles can be unconstrained.
 
         Returns
         -------
@@ -204,6 +212,7 @@ class SensitivityDataFile:
             Sensitivity data file
 
         """
+        cv.check_value('chi', chi, ('constrained', 'unconstrained'))
         energies = np.asarray(energies, dtype=float)
         ng = len(energies) - 1
 
@@ -224,6 +233,8 @@ class SensitivityDataFile:
         for nuc in nuclides:
             name, za = _sdf_nuclide_name(nuc)
             for rx, mt, keys in _SDF_REACTIONS:
+                if rx == 'chi' and chi == 'unconstrained':
+                    keys = ['chi-prompt', 'chi-delayed']
                 present = [k for k in keys if (nuc, k) in coefficients]
                 if not present:
                     continue
