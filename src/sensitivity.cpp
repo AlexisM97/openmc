@@ -56,6 +56,19 @@ namespace {
 //! constant of the ancestors of source neutrons during inactive generations
 array<double, 4> kinetics_reference_sums {};
 
+//! Prepare a chain to receive n events. Vectors keep their capacity when
+//! reassigned, so without this every bank slot would retain the storage of the
+//! longest chain it ever held, and memory would grow with the number of
+//! batches in problems with a wide spread of chain lengths.
+void reserve_chain(SensitivityChain& chain, size_t n)
+{
+  if (chain.capacity() > 2 * n + 64) {
+    SensitivityChain().swap(chain);
+  }
+  chain.clear();
+  chain.reserve(n);
+}
+
 //! Determine the positions of the end markers of the links in a chain
 //!
 //! \param[in] chain Chain of ancestors
@@ -480,13 +493,13 @@ void bank_sensitivity_fission_site(
               [](const SensitivityEvent& e) { return e.is_link_end(); }) +
             1;
   }
-  auto& chain = simulation::sensitivity_fission_bank[idx];
-  chain.assign(start, parent_chain.end());
-
   // The link from the parent to this fission site consists of all events of
   // the parent so far plus the events associated with the production of the
-  // fission neutron
+  // fission neutron (three events and the end marker)
   const auto& events = p.sensitivity_events();
+  auto& chain = simulation::sensitivity_fission_bank[idx];
+  reserve_chain(chain, (parent_chain.end() - start) + events.size() + 4);
+  chain.assign(start, parent_chain.end());
   chain.insert(chain.end(), events.begin(), events.end());
   double E_in = p.E();
   bool delayed = site.delayed_group > 0;
@@ -673,8 +686,10 @@ void finalize_kinetics_reference()
 
 void copy_sensitivity_from_fission_bank(int64_t i_bank, int64_t i_temp)
 {
-  simulation::sensitivity_temp_bank[i_temp] =
-    simulation::sensitivity_fission_bank[i_bank];
+  const auto& src = simulation::sensitivity_fission_bank[i_bank];
+  auto& dst = simulation::sensitivity_temp_bank[i_temp];
+  reserve_chain(dst, src.size());
+  dst.assign(src.begin(), src.end());
 }
 
 void move_sensitivity_to_source_bank(int64_t i_temp, int64_t n, int64_t i_bank)
@@ -759,6 +774,7 @@ void exchange_sensitivity_chains(const vector<SensitivityTransfer>& sends,
     auto event = recv_events[k].begin();
     for (int64_t i = 0; i < r.n; ++i) {
       int length = recv_lengths[k][i];
+      reserve_chain(source_bank[r.index + i], length);
       source_bank[r.index + i].assign(event, event + length);
       event += length;
     }

@@ -168,6 +168,10 @@ void Particle::from_source(const SourceSite* src)
   zero_flux_derivs();
   lifetime() = 0.0;
   sensitivity_events().clear();
+  // Release the storage left by an unusually long previous history, which
+  // would otherwise be kept by reused particles in event-based transport
+  if (sensitivity_events().capacity() > 4096)
+    sensitivity_events().shrink_to_fit();
 #ifdef OPENMC_DAGMC_ENABLED
   history().reset();
 #endif
