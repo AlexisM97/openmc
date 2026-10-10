@@ -270,6 +270,16 @@ class Settings:
         The type of calculation to perform (default is 'eigenvalue')
     seed : int
         Seed for the linear congruential pseudorandom number generator
+    delayed_neutron_bias : float
+        Factor by which the emission of delayed fission neutrons is biased in
+        eigenvalue calculations. Delayed neutrons are sampled this many times
+        more often than their physical fraction (up to half of the fission
+        neutrons), and the weights of fission sites are adjusted so that all
+        estimates remain unbiased. Increasing the number of sampled delayed
+        neutrons can reduce the variance of kinetics parameters and their
+        sensitivities. If not specified, no biasing is applied.
+
+        .. versionadded:: 0.16.1
     sensitivity_latent_generations : int
         Number of generations of ancestors, before those used to estimate
         importance with the Iterated Fission Probability method, whose events
@@ -467,6 +477,7 @@ class Settings:
         # Iterated Fission Probability
         self._ifp_n_generation = None
         self._sensitivity_latent_generations = None
+        self._delayed_neutron_bias = None
 
         # Collision track feature
         self._collision_track = {}
@@ -1067,6 +1078,17 @@ class Settings:
             cv.check_type("number of generations", ifp_n_generation, Integral)
             cv.check_greater_than("number of generations", ifp_n_generation, 0)
         self._ifp_n_generation = ifp_n_generation
+
+    @property
+    def delayed_neutron_bias(self) -> float:
+        return self._delayed_neutron_bias
+
+    @delayed_neutron_bias.setter
+    def delayed_neutron_bias(self, factor: float):
+        if factor is not None:
+            cv.check_type("delayed neutron bias", factor, Real)
+            cv.check_greater_than("delayed neutron bias", factor, 1.0, True)
+        self._delayed_neutron_bias = factor
 
     @property
     def sensitivity_latent_generations(self) -> int:
@@ -1841,6 +1863,11 @@ class Settings:
             element = ET.SubElement(root, "ifp_n_generation")
             element.text = str(self._ifp_n_generation)
 
+    def _create_delayed_neutron_bias_subelement(self, root):
+        if self._delayed_neutron_bias is not None:
+            element = ET.SubElement(root, "delayed_neutron_bias")
+            element.text = str(self._delayed_neutron_bias)
+
     def _create_sensitivity_latent_generations_subelement(self, root):
         if self._sensitivity_latent_generations is not None:
             element = ET.SubElement(root, "sensitivity_latent_generations")
@@ -2376,6 +2403,11 @@ class Settings:
         if text is not None:
             self.ifp_n_generation = int(text)
 
+    def _delayed_neutron_bias_from_xml_element(self, root):
+        text = get_text(root, 'delayed_neutron_bias')
+        if text is not None:
+            self.delayed_neutron_bias = float(text)
+
     def _sensitivity_latent_generations_from_xml_element(self, root):
         text = get_text(root, 'sensitivity_latent_generations')
         if text is not None:
@@ -2665,6 +2697,7 @@ class Settings:
         self._create_verbosity_subelement(element)
         self._create_ifp_n_generation_subelement(element)
         self._create_sensitivity_latent_generations_subelement(element)
+        self._create_delayed_neutron_bias_subelement(element)
         self._create_tabular_legendre_subelements(element)
         self._create_temperature_subelements(element)
         self._create_properties_file_element(element)
@@ -2785,6 +2818,7 @@ class Settings:
         settings._verbosity_from_xml_element(elem)
         settings._ifp_n_generation_from_xml_element(elem)
         settings._sensitivity_latent_generations_from_xml_element(elem)
+        settings._delayed_neutron_bias_from_xml_element(elem)
         settings._tabular_legendre_from_xml_element(elem)
         settings._temperature_from_xml_element(elem)
         settings._properties_file_from_xml_element(elem)

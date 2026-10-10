@@ -193,7 +193,8 @@ void create_fission_sites(Particle& p, int i_nuclide, const Reaction& rx)
     return;
 
   // Initialize the counter of delayed neutrons encountered for each delayed
-  // group.
+  // group, weighted relative to an unbiased fission site when the emission of
+  // delayed neutrons is biased
   double nu_d[MAX_DELAYED_GROUPS] = {0.};
 
   // Clear out particle's nu fission bank
@@ -268,7 +269,7 @@ void create_fission_sites(Particle& p, int i_nuclide, const Reaction& rx)
 
     // Increment the number of neutrons born delayed
     if (site.delayed_group > 0) {
-      nu_d[site.delayed_group - 1]++;
+      nu_d[site.delayed_group - 1] += site.wgt * weight;
     }
 
     // Write fission particles to nuBank
@@ -1107,7 +1108,18 @@ void sample_fission_neutron(
   double nu_d = nuc->nu(E_in, Nuclide::EmissionMode::delayed);
   double beta = nu_d / nu_t;
 
-  if (prn(seed) < beta) {
+  // Delayed neutrons may be sampled more often than their physical fraction,
+  // with the weight of the site adjusted by the ratio of the physical and
+  // sampled probabilities so that all estimates remain unbiased
+  double q = beta;
+  if (settings::delayed_neutron_bias > 1.0 && beta > 0.0) {
+    q = std::min(settings::delayed_neutron_bias * beta, 0.5);
+    q = std::max(q, beta);
+  }
+
+  if (prn(seed) < q) {
+    if (q != beta)
+      site->wgt *= beta / q;
     // ====================================================================
     // DELAYED NEUTRON SAMPLED
 
@@ -1143,6 +1155,8 @@ void sample_fission_neutron(
 
     // set the delayed group for the particle born from fission to 0
     site->delayed_group = 0;
+    if (q != beta)
+      site->wgt *= (1.0 - beta) / (1.0 - q);
   }
 
   // sample from prompt neutron energy distribution

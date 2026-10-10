@@ -134,6 +134,7 @@ extern array<double, 4>
 extern int
   ifp_n_generation; //!< Number of generation for Iterated Fission Probability
 extern int sensitivity_latent_generations; //!< Latent generations for kinetics
+extern double delayed_neutron_bias; //!< Biasing factor of delayed emission
                                            //!< parameter sensitivities
 extern int
   legendre_to_tabular_points; //!< number of points to convert Legendres

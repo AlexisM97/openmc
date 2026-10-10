@@ -117,6 +117,7 @@ array<double, 4> energy_cutoff {0.0, 1000.0, 0.0, 0.0};
 array<double, 4> time_cutoff {INFTY, INFTY, INFTY, INFTY};
 int ifp_n_generation {-1};
 int sensitivity_latent_generations {-1};
+double delayed_neutron_bias {1.0};
 int legendre_to_tabular_points {C_NONE};
 int max_order {0};
 int n_log_bins {8000};
@@ -608,6 +609,16 @@ void read_settings_xml(pugi::xml_node root)
       if (sensitivity_latent_generations < 0) {
         fatal_error("'sensitivity_latent_generations' must be greater than or "
                     "equal to 0.");
+      }
+    }
+
+    // Check for a biasing factor of the emission of delayed neutrons
+    if (check_for_node(root, "delayed_neutron_bias")) {
+      delayed_neutron_bias =
+        std::stod(get_node_value(root, "delayed_neutron_bias"));
+      if (delayed_neutron_bias < 1.0) {
+        fatal_error("'delayed_neutron_bias' must be greater than or equal "
+                    "to 1.");
       }
     }
   }
