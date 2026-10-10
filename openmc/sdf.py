@@ -601,9 +601,16 @@ class SensitivityDataFile:
         energies = np.array(bounds[::-1])
         sdf = cls(title, energies, keff, keff_std)
 
-        for _ in range(n_profiles):
-            while not lines[pos].strip():
+        for i in range(n_profiles):
+            while pos < len(lines) and not lines[pos].strip():
                 pos += 1
+            # Some files have fewer profiles than their header states and
+            # may end with a section of file verification information
+            if pos >= len(lines) or \
+                    lines[pos].strip().lower().startswith('file verification'):
+                warnings.warn(f'{filename} contains {i} sensitivity profiles '
+                              f'but its header states {n_profiles}.')
+                break
             fields = lines[pos].split()
             nuclide, mt = fields[0], int(fields[-1])
             # A ZA identifier that fills its field runs into the reaction

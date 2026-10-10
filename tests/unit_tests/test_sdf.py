@@ -296,3 +296,19 @@ def test_read_joined_za(run_in_tmpdir):
     p = openmc.SensitivityDataFile.from_file('t.sdf').profiles[0]
     assert (p.nuclide, p.reaction, p.za, p.mt) == ('h-1', 'scatter',
                                                     3001001, 0)
+
+
+def test_fewer_profiles_than_header(run_in_tmpdir):
+    """Files whose header overstates the number of profiles are read with a
+    warning"""
+    profile = openmc.SensitivityProfile(
+        'u-235', 'total', 92235, 1, np.array([0.5, -0.1, 0.2]), np.zeros(3))
+    sdf = openmc.SensitivityDataFile('t', ENERGIES, 1.0, 0.0, [profile])
+    sdf.export_to_file('t.sdf')
+    lines = open('t.sdf').read().splitlines()
+    lines[2] = lines[2].replace('         1', '         2', 1)
+    lines += ['', ' file verification information', ' code system: SCALE']
+    open('t.sdf', 'w').write('\n'.join(lines) + '\n')
+    with pytest.warns(UserWarning, match='header states 2'):
+        new = openmc.SensitivityDataFile.from_file('t.sdf')
+    assert len(new.profiles) == 1
