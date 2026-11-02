@@ -11,6 +11,7 @@
 #include "openmc/collision_track.h"
 #include "openmc/constants.h"
 #include "openmc/dagmc.h"
+#include "openmc/mesh_geometry.h"
 #include "openmc/error.h"
 #include "openmc/geometry.h"
 #include "openmc/hdf5_interface.h"
@@ -700,6 +701,12 @@ void Particle::cross_surface(const Surface& surf)
   }
 #endif
 
+  // in a mesh universe, the next cell is across the face of the tetrahedron
+  if (surf.geom_type() == GeometryType::MESH) {
+    mesh_universe(*this).cross_face(*this);
+    return;
+  }
+
   bool verbose = settings::verbosity >= 10 || trace();
   if (neighbor_list_find_cell(*this, verbose)) {
     return;
@@ -799,9 +806,10 @@ void Particle::cross_reflective_bc(const Surface& surf, Direction new_u)
   // If a reflective surface is coincident with a lattice or universe
   // boundary, it is necessary to redetermine the particle's coordinates in
   // the lower universes.
-  // (unless we're using a dagmc model, which has exactly one universe)
+  // (unless we're using a dagmc or mesh model, which has exactly one universe;
+  // in a mesh universe the particle stays in its tetrahedron)
   n_coord() = 1;
-  if (surf.geom_type() != GeometryType::DAG &&
+  if (surf.geom_type() == GeometryType::CSG &&
       !neighbor_list_find_cell(*this)) {
     mark_as_lost("Couldn't find particle after reflecting from surface " +
                  std::to_string(surf.id_) + ".");

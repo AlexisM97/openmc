@@ -16,6 +16,7 @@ from openmc.weight_windows import *
 from openmc.surface import *
 from openmc.universe import *
 from openmc.dagmc import *
+from openmc.mesh_universe import MeshUniverse, MeshCell, exodus_to_mesh_file
 from openmc.source import *
 from openmc.settings import *
 from openmc.lattice import *

@@ -165,7 +165,12 @@ class Summary:
             region = group['region'][()].decode() if 'region' in group else ''
 
             # Create this Cell
-            cell = openmc.Cell(cell_id=cell_id, name=name)
+            geom_type = group['geom_type'][()].decode() if 'geom_type' in group else ''
+            if geom_type == 'mesh':
+                cell = openmc.MeshCell(int(group['block'][()]), cell_id=cell_id,
+                                       name=name)
+            else:
+                cell = openmc.Cell(cell_id=cell_id, name=name)
 
             if fill_type == 'universe':
                 if 'translation' in group:
@@ -199,6 +204,8 @@ class Summary:
             geom_type = group.get('geom_type')
             if geom_type and geom_type[()].decode() == 'dagmc':
                 universe = openmc.DAGMCUniverse.from_hdf5(group)
+            elif geom_type and geom_type[()].decode() == 'mesh':
+                universe = openmc.MeshUniverse.from_hdf5(group, self._fast_cells)
             else:
                 universe = openmc.Universe.from_hdf5(group, self._fast_cells)
             self._fast_universes[universe.id] = universe

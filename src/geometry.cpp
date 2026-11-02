@@ -8,6 +8,7 @@
 #include "openmc/constants.h"
 #include "openmc/error.h"
 #include "openmc/lattice.h"
+#include "openmc/mesh_geometry.h"
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/string_utils.h"
@@ -192,6 +193,12 @@ bool find_cell_inner(
       // Found a material cell which means this is the lowest coord level.
 
       p.cell_instance() = 0;
+
+      // Cells of mesh universes take their properties from the element
+      if (c.geom_type() == GeometryType::MESH) {
+        mesh_universe(p).set_properties(p);
+        return true;
+      }
       // Find the distribcell instance number.
       if (c.distribcell_index_ >= 0) {
         p.cell_instance() = cell_instance_at_level(p, p.n_coord() - 1);

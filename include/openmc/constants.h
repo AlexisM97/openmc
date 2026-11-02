@@ -402,7 +402,7 @@ enum class RandomRaySolve { FORWARD, FORWARD_FOR_ADJOINT, ADJOINT };
 //==============================================================================
 // Geometry Constants
 
-enum class GeometryType { CSG, DAG };
+enum class GeometryType { CSG, DAG, MESH };
 
 // a surface token cannot be zero due to the unsigned nature of zero for integer
 // representations. This value represents no surface.

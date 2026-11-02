@@ -394,6 +394,14 @@ public:
   // Boundary information
   BoundaryInfo& boundary() { return boundary_; }
 
+  // Tetrahedron of a mesh universe that the particle is in, the local face it
+  // is on (entered through or reflected from) and the face it will exit
+  // through
+  int32_t& mesh_tet() { return mesh_tet_; }
+  const int32_t& mesh_tet() const { return mesh_tet_; }
+  int& mesh_face() { return mesh_face_; }
+  int& mesh_exit_face() { return mesh_exit_face_; }
+
 #ifdef OPENMC_DAGMC_ENABLED
   // DagMC state variables
   moab::DagMC::RayHistory& history() { return history_; }
@@ -437,6 +445,10 @@ private:
     SURFACE_NONE}; //!< surface token for surface the particle is currently on
 
   BoundaryInfo boundary_; //!< Info about the next intersection
+
+  int32_t mesh_tet_ {-1};   //!< tetrahedron in a mesh universe
+  int mesh_face_ {-1};      //!< local face of the tetrahedron it is on
+  int mesh_exit_face_ {-1}; //!< local face of the next crossing
 
   int material_ {-1};      //!< index for current material
   int material_last_ {-1}; //!< index for last material

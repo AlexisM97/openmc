@@ -15,6 +15,7 @@
 #include "openmc/capi.h"
 #include "openmc/constants.h"
 #include "openmc/dagmc.h"
+#include "openmc/mesh_geometry.h"
 #include "openmc/error.h"
 #include "openmc/geometry.h"
 #include "openmc/hdf5_interface.h"
@@ -1222,6 +1223,7 @@ void read_cells(pugi::xml_node node)
   }
 
   read_dagmc_universes(node);
+  read_mesh_universes(node);
 
   populate_universes();
 
