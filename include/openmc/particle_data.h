@@ -400,6 +400,7 @@ public:
   int32_t& mesh_tet() { return mesh_tet_; }
   const int32_t& mesh_tet() const { return mesh_tet_; }
   int& mesh_face() { return mesh_face_; }
+  int32_t& mesh_exit_tet() { return mesh_exit_tet_; }
   int& mesh_exit_face() { return mesh_exit_face_; }
 
 #ifdef OPENMC_DAGMC_ENABLED
@@ -448,7 +449,8 @@ private:
 
   int32_t mesh_tet_ {-1};   //!< tetrahedron in a mesh universe
   int mesh_face_ {-1};      //!< local face of the tetrahedron it is on
-  int mesh_exit_face_ {-1}; //!< local face of the next crossing
+  int32_t mesh_exit_tet_ {-1}; //!< tetrahedron of the next crossing
+  int mesh_exit_face_ {-1};    //!< local face of the next crossing
 
   int material_ {-1};      //!< index for current material
   int material_last_ {-1}; //!< index for last material

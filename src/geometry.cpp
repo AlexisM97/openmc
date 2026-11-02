@@ -325,6 +325,15 @@ bool neighbor_list_find_cell(GeometryState& p, bool verbose)
 
 void reconcile_cell_after_collision(GeometryState& p)
 {
+  // In a mesh universe, the tetrahedron is found from the current one
+  const auto& lowest = p.lowest_coord();
+  if (lowest.cell() != C_NONE &&
+      model::cells[lowest.cell()]->geom_type() == GeometryType::MESH) {
+    if (!mesh_universe(p).locate(p))
+      p.mark_as_lost("Could not find particle in mesh after a collision.");
+    return;
+  }
+
   // Find the first coordinate level whose current cell is inconsistent with
   // the particle's post-collision direction.
   int invalid_level = C_NONE;

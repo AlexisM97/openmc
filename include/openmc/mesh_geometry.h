@@ -5,6 +5,7 @@
 #define OPENMC_MESH_GEOMETRY_H
 
 #include <string>
+#include <tuple>
 
 #include "pugixml.hpp"
 
@@ -109,6 +110,18 @@ public:
   std::pair<double, int> exit_face(
     int32_t tet, Position r, Direction u, int entry_face) const;
 
+  //! Distance to the exit face of the element of a tetrahedron, walking
+  //! through the tetrahedra of the element
+  //! \return Distance, tetrahedron and local face of the exit
+  std::tuple<double, int32_t, int> walk_element(
+    int32_t tet, Position r, Direction u, int entry_face) const;
+
+  //! Find the tetrahedron of a particle off the faces (after a collision),
+  //! searching its element first; updates the cell and properties if the
+  //! element changes
+  //! \return Whether the particle is in the mesh
+  bool locate(GeometryState& p) const;
+
   //! Token of the surface of a local face of a tetrahedron
   int32_t face_surface(int32_t tet, int face) const;
 
@@ -183,6 +196,8 @@ private:
   int32_t interior_surface_ {C_NONE}; //!< Index in model::surfaces
   vector<int32_t> boundary_surfaces_; //!< Index of each boundary set surface
 
+  vector<int32_t> element_tet_start_; //!< Tetrahedra of each element (CSR)
+  vector<int32_t> element_tets_;
   vector<double> element_volume_;       //!< cm^3
   vector<double> element_sqrtkT_;       //!< < 0: temperature of the cell
   vector<double> element_density_mult_; //!< < 0: multiplier of the cell

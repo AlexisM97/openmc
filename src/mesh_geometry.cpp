@@ -64,21 +64,19 @@ std::pair<double, int32_t> MeshCell::distance(
     fatal_error("Distances in mesh cells require the particle state.");
   }
   const auto& univ = mesh_universe();
-  int32_t& tet = p->mesh_tet();
-  if (tet == C_NONE) {
-    tet = univ.find_tet(r, u);
-    p->mesh_face() = C_NONE;
-    if (tet == C_NONE) {
+  // Off a face (born, or after a collision), make sure of the tetrahedron
+  if (on_surface == SURFACE_NONE || p->mesh_tet() == C_NONE) {
+    if (!univ.locate(*p))
       return {INFTY, -1};
-    }
   }
   int entry = on_surface == SURFACE_NONE ? C_NONE : p->mesh_face();
-  auto [d, face] = univ.exit_face(tet, r, u, entry);
+  auto [d, exit_tet, face] = univ.walk_element(p->mesh_tet(), r, u, entry);
+  p->mesh_exit_tet() = exit_tet;
   p->mesh_exit_face() = face;
   if (face == C_NONE) {
     return {INFTY, -1};
   }
-  return {d, univ.face_surface(tet, face)};
+  return {d, univ.face_surface(exit_tet, face)};
 }
 
 BoundingBox MeshCell::bounding_box() const
@@ -122,9 +120,10 @@ Direction MeshSurface::reflect(Position r, Direction u, GeometryState* p) const
   }
   const auto& univ =
     static_cast<const MeshUniverse&>(*model::universes[universe_index_]);
-  Direction n = univ.face_normal(p->mesh_tet(), p->mesh_exit_face());
+  Direction n = univ.face_normal(p->mesh_exit_tet(), p->mesh_exit_face());
   last_face_normal = n;
-  // The particle stays in its tetrahedron, on the reflecting face
+  // The particle stays in the tetrahedron it reached, on the reflecting face
+  p->mesh_tet() = p->mesh_exit_tet();
   p->mesh_face() = p->mesh_exit_face();
   return u - 2.0 * u.dot(n) * n;
 }
@@ -273,6 +272,19 @@ MeshUniverse::MeshUniverse(pugi::xml_node node)
       int32_t s = it == set_surface.end() ? default_surface : it->second;
       neighbors_[t][k] = -(1 + s);
     }
+  }
+
+  element_tet_start_.assign(element_block_.size() + 1, 0);
+  for (auto e : tet_element_)
+    ++element_tet_start_[e + 1];
+  std::partial_sum(element_tet_start_.begin(), element_tet_start_.end(),
+    element_tet_start_.begin());
+  element_tets_.resize(tets_.size());
+  {
+    vector<int32_t> next(
+      element_tet_start_.begin(), element_tet_start_.end() - 1);
+    for (int32_t t = 0; t < tets_.size(); ++t)
+      element_tets_[next[tet_element_[t]]++] = t;
   }
 
   element_volume_.assign(element_block_.size(), 0.0);
@@ -548,9 +560,64 @@ Direction MeshUniverse::face_normal(int32_t tet, int face) const
   return (f > 0 ? 1.0 : -1.0) * face_n_[std::abs(f) - 1];
 }
 
+std::tuple<double, int32_t, int> MeshUniverse::walk_element(
+  int32_t tet, Position r, Direction u, int entry_face) const
+{
+  int32_t element = tet_element_[tet];
+  double d_total = 0.0;
+  // A straight track visits each tetrahedron of a convex element at most once
+  for (int i = 0; i < 64; ++i) {
+    auto [d, face] = exit_face(tet, r, u, entry_face);
+    if (face == C_NONE)
+      return {INFTY, tet, C_NONE};
+    d_total += d;
+    int32_t nb = neighbors_[tet][face];
+    if (nb < 0 || tet_element_[nb] != element)
+      return {d_total, tet, face};
+    r += d * u;
+    entry_face = neighbor_faces_[tet][face];
+    tet = nb;
+  }
+  return {d_total, tet, C_NONE};
+}
+
+bool MeshUniverse::locate(GeometryState& p) const
+{
+  constexpr double tol = 1e-9;
+  Position r = p.r_local();
+  int32_t tet = p.mesh_tet();
+  int32_t found = C_NONE;
+  if (tet != C_NONE) {
+    if (tet_contains(tet, r, tol)) {
+      found = tet;
+    } else {
+      int32_t e = tet_element_[tet];
+      for (int32_t i = element_tet_start_[e]; i < element_tet_start_[e + 1];
+           ++i) {
+        if (tet_contains(element_tets_[i], r, tol)) {
+          found = element_tets_[i];
+          break;
+        }
+      }
+    }
+  }
+  if (found == C_NONE)
+    found = find_tet(r, p.u_local());
+  if (found == C_NONE)
+    return false;
+  p.mesh_tet() = found;
+  p.mesh_face() = C_NONE;
+  int32_t cell = block_cells_[element_block_[tet_element_[found]]];
+  if (tet == C_NONE || tet_element_[found] != tet_element_[tet]) {
+    p.lowest_coord().cell() = cell;
+    set_properties(p);
+  }
+  return true;
+}
+
 void MeshUniverse::cross_face(GeometryState& p) const
 {
-  int32_t tet = p.mesh_tet();
+  int32_t tet = p.mesh_exit_tet();
   int face = p.mesh_exit_face();
   last_face_normal = face_normal(tet, face);
   int32_t nb = neighbors_[tet][face];
