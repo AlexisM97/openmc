@@ -135,6 +135,9 @@ public:
   int32_t cell_of_block(int32_t b) const { return block_cells_[b]; }
   int32_t block_id(int32_t b) const { return block_ids_[b]; }
 
+  //! Throw if a temperature of an element is outside of the data range
+  void check_temperature(int32_t e, double T) const;
+
   //! Set the temperature of an element (K)
   void set_element_temperature(int32_t e, double T);
 
@@ -147,7 +150,7 @@ public:
   double element_density_mult(int32_t e) const;
 
   //! Volume of an element (cm^3)
-  double element_volume(int32_t e) const;
+  double element_volume(int32_t e) const { return element_volume_.at(e); }
 
   const std::string& filename() const { return filename_; }
 
@@ -180,6 +183,7 @@ private:
   int32_t interior_surface_ {C_NONE}; //!< Index in model::surfaces
   vector<int32_t> boundary_surfaces_; //!< Index of each boundary set surface
 
+  vector<double> element_volume_;       //!< cm^3
   vector<double> element_sqrtkT_;       //!< < 0: temperature of the cell
   vector<double> element_density_mult_; //!< < 0: multiplier of the cell
 

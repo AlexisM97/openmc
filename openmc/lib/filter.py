@@ -19,6 +19,7 @@ from .mesh import _get_mesh
 __all__ = [
     'Filter', 'AzimuthalFilter', 'CellFilter', 'CellbornFilter', 'CellfromFilter',
     'CellInstanceFilter', 'CollisionFilter', 'DistribcellFilter', 'DelayedGroupFilter',
+    'ElementFilter',
     'EnergyFilter', 'EnergyoutFilter', 'EnergyFunctionFilter', 'LegendreFilter',
     'MaterialFilter', 'MaterialFromFilter', 'MeshFilter', 'MeshBornFilter',
     'MeshMaterialFilter', 'MeshSurfaceFilter', 'MuFilter', 'MuSurfaceFilter',
@@ -203,6 +204,10 @@ class Filter(_FortranObjectWithID):
         n = c_int()
         _dll.openmc_filter_get_num_bins(self._index, n)
         return n.value
+
+
+class ElementFilter(Filter):
+    filter_type = 'element'
 
 
 class EnergyFilter(Filter):
@@ -718,6 +723,7 @@ _FILTER_TYPE_MAP = {
     'collision': CollisionFilter,
     'delayedgroup': DelayedGroupFilter,
     'distribcell': DistribcellFilter,
+    'element': ElementFilter,
     'energy': EnergyFilter,
     'energyout': EnergyoutFilter,
     'energyfunction': EnergyFunctionFilter,

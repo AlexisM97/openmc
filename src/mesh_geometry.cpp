@@ -7,7 +7,9 @@
 #include <fmt/core.h>
 
 #include "openmc/boundary_condition.h"
+#include "openmc/capi.h"
 #include "openmc/constants.h"
+#include "openmc/nuclide.h"
 #include "openmc/error.h"
 #include "openmc/file_utils.h"
 #include "openmc/geometry.h"
@@ -273,6 +275,13 @@ MeshUniverse::MeshUniverse(pugi::xml_node node)
     }
   }
 
+  element_volume_.assign(element_block_.size(), 0.0);
+  for (int32_t t = 0; t < tets_.size(); ++t) {
+    const auto& x = tets_[t];
+    Position a = nodes_[x[0]];
+    Position b = nodes_[x[1]] - a, c = nodes_[x[2]] - a, d = nodes_[x[3]] - a;
+    element_volume_[tet_element_[t]] += std::abs(b.dot(c.cross(d))) / 6.0;
+  }
   element_sqrtkT_.assign(element_block_.size(), -1.0);
   element_density_mult_.assign(element_block_.size(), -1.0);
   build_search_grid();
@@ -594,8 +603,21 @@ BoundingBox MeshUniverse::block_bounding_box(int32_t block) const
   return box;
 }
 
+void MeshUniverse::check_temperature(int32_t e, double T) const
+{
+  if (settings::temperature_method == TemperatureMethod::INTERPOLATION &&
+      (T < data::temperature_min - settings::temperature_tolerance ||
+        T > data::temperature_max + settings::temperature_tolerance)) {
+    throw std::runtime_error {
+      fmt::format("Temperature of {} K of element {} of mesh universe {} is "
+                  "outside of the range of the nuclear data ({}-{} K).",
+        T, e, id_, data::temperature_min, data::temperature_max)};
+  }
+}
+
 void MeshUniverse::set_element_temperature(int32_t e, double T)
 {
+  check_temperature(e, T);
   element_sqrtkT_.at(e) = std::sqrt(K_BOLTZMANN * T);
 }
 
@@ -610,7 +632,7 @@ double MeshUniverse::element_temperature(int32_t e) const
 void MeshUniverse::set_element_density_mult(int32_t e, double mult)
 {
   if (mult < 0.0) {
-    fatal_error("Density multipliers must be non-negative.");
+    throw std::runtime_error {"Density multipliers must be non-negative."};
   }
   element_density_mult_.at(e) = mult;
 }
@@ -621,20 +643,6 @@ double MeshUniverse::element_density_mult(int32_t e) const
   return m >= 0.0
            ? m
            : model::cells[block_cells_[element_block_[e]]]->density_mult(0);
-}
-
-double MeshUniverse::element_volume(int32_t e) const
-{
-  double v = 0.0;
-  for (int32_t t = 0; t < tets_.size(); ++t) {
-    if (tet_element_[t] != e)
-      continue;
-    const auto& x = tets_[t];
-    Position a = nodes_[x[0]];
-    Position b = nodes_[x[1]] - a, c = nodes_[x[2]] - a, d = nodes_[x[3]] - a;
-    v += std::abs(b.dot(c.cross(d))) / 6.0;
-  }
-  return v;
 }
 
 void MeshUniverse::to_hdf5(hid_t universes_group) const
@@ -673,6 +681,112 @@ const MeshUniverse& mesh_universe(const GeometryState& p)
 {
   return static_cast<const MeshUniverse&>(
     *model::universes[p.lowest_coord().universe()]);
+}
+
+//==============================================================================
+// C API
+//==============================================================================
+
+namespace {
+
+//! Mesh universe of an ID, or nullptr with the error message set
+MeshUniverse* find_mesh_universe(int32_t id)
+{
+  auto it = model::universe_map.find(id);
+  if (it == model::universe_map.end()) {
+    set_errmsg(fmt::format("No universe exists with ID={}.", id));
+    return nullptr;
+  }
+  auto* univ = dynamic_cast<MeshUniverse*>(model::universes[it->second].get());
+  if (!univ) {
+    set_errmsg(fmt::format("Universe {} is not a mesh universe.", id));
+  }
+  return univ;
+}
+
+//! Apply f(i) to the n elements of a mesh universe of an ID
+template<typename F>
+int for_elements(int32_t id, int32_t n, F&& f)
+{
+  auto* univ = find_mesh_universe(id);
+  if (!univ)
+    return OPENMC_E_INVALID_ID;
+  if (n != univ->n_elements()) {
+    set_errmsg(fmt::format("Mesh universe {} has {} elements, not {}.", id,
+      univ->n_elements(), n));
+    return OPENMC_E_INVALID_SIZE;
+  }
+  try {
+    for (int32_t e = 0; e < n; ++e)
+      f(*univ, e);
+  } catch (const std::exception& err) {
+    set_errmsg(err.what());
+    return OPENMC_E_INVALID_ARGUMENT;
+  }
+  return 0;
+}
+
+} // namespace
+
+extern "C" int openmc_mesh_universe_get_n_elements(int32_t id, int32_t* n)
+{
+  auto* univ = find_mesh_universe(id);
+  if (!univ)
+    return OPENMC_E_INVALID_ID;
+  *n = univ->n_elements();
+  return 0;
+}
+
+extern "C" int openmc_mesh_universe_get_blocks(
+  int32_t id, int32_t* block_ids, int32_t n)
+{
+  return for_elements(id, n, [&](const MeshUniverse& u, int32_t e) {
+    block_ids[e] = u.block_id(u.block_of_element(e));
+  });
+}
+
+extern "C" int openmc_mesh_universe_get_volumes(
+  int32_t id, double* volumes, int32_t n)
+{
+  return for_elements(id, n, [&](const MeshUniverse& u, int32_t e) {
+    volumes[e] = u.element_volume(e);
+  });
+}
+
+extern "C" int openmc_mesh_universe_get_temperatures(
+  int32_t id, double* T, int32_t n)
+{
+  return for_elements(id, n, [&](const MeshUniverse& u, int32_t e) {
+    T[e] = u.element_temperature(e);
+  });
+}
+
+extern "C" int openmc_mesh_universe_set_temperatures(
+  int32_t id, const double* T, int32_t n)
+{
+  // Check all temperatures before setting any
+  int err = for_elements(id, n,
+    [&](const MeshUniverse& u, int32_t e) { u.check_temperature(e, T[e]); });
+  if (err)
+    return err;
+  return for_elements(id, n,
+    [&](MeshUniverse& u, int32_t e) { u.set_element_temperature(e, T[e]); });
+}
+
+extern "C" int openmc_mesh_universe_get_density_mults(
+  int32_t id, double* mult, int32_t n)
+{
+  return for_elements(id, n, [&](const MeshUniverse& u, int32_t e) {
+    mult[e] = u.element_density_mult(e);
+  });
+}
+
+extern "C" int openmc_mesh_universe_set_density_mults(
+  int32_t id, const double* mult, int32_t n)
+{
+  return for_elements(id, n, [&](MeshUniverse& u, int32_t e) {
+    u.set_element_density_mult(e, mult[e]);
+  });
 }
 
 } // namespace openmc

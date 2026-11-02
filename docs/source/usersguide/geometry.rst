@@ -640,6 +640,48 @@ them on initialization.
 .. _Direct Accelerated Geometry Monte Carlo: https://svalinn.github.io/DAGMC/
 .. _University of Wisconsin Unified Workflow: https://svalinn.github.io/DAGMC/usersguide/uw2.html
 
+.. _usersguide_mesh_universe:
+
+--------------------------------
+Using Unstructured Mesh Geometry
+--------------------------------
+
+OpenMC can track particles on an unstructured mesh, for instance the mesh of
+a heat conduction or fluid dynamics code, so that both codes exchange data
+element by element. An Exodus mesh is converted to a mesh file of linear
+tetrahedra: hexahedra, wedges and pyramids are split into tetrahedra that
+conform across shared faces, and every tetrahedron keeps the index of its
+element::
+
+  info = openmc.exodus_to_mesh_file('mesh.e', 'mesh.h5', length_multiplier=100.0)
+
+Each element block of the mesh is one :class:`openmc.MeshCell` with one
+material, and side sets of the mesh can be given boundary conditions::
+
+  fuel_cell = openmc.MeshCell(block=1, fill=fuel)
+  graphite_cell = openmc.MeshCell(block=2, fill=graphite)
+  mesh_univ = openmc.MeshUniverse('mesh.h5', boundary='vacuum',
+                                  boundary_sets={101: 'reflective'})
+  mesh_univ.add_cells([fuel_cell, graphite_cell])
+  geometry = openmc.Geometry(mesh_univ)
+
+An :class:`openmc.ElementFilter` scores tallies in each element (in the order
+of the elements of the Exodus file), and :class:`openmc.lib.MeshUniverse`
+sets the temperature and density multiplier of each element between
+calculations::
+
+  heating = openmc.Tally()
+  heating.filters = [openmc.ElementFilter(mesh_univ)]
+  heating.scores = ['heating']
+
+  openmc.lib.init()
+  mesh = openmc.lib.MeshUniverse(mesh_univ.id)
+  mesh.temperatures = element_temperatures
+  openmc.lib.run()
+
+A mesh universe must currently be the root universe of the geometry, with
+vacuum or reflective conditions on its boundary.
+
 -------------------------
 Calculating Atoms Content
 -------------------------

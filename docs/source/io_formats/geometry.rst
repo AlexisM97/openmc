@@ -472,3 +472,55 @@ Each ``<dagmc_universe>`` element can have the following attributes or sub-eleme
         <geometry>
           <dagmc_universe filename="dagmc.h5m" id="1" />
         </geometry>
+
+---------------------------
+``<mesh_universe>`` Element
+---------------------------
+
+A mesh universe uses a mesh of linear tetrahedra, read from an HDF5 file
+written by :func:`openmc.exodus_to_mesh_file` or
+:func:`openmc.mesh_universe.write_mesh_file`, as its geometry. Each
+``<mesh_universe>`` element can have the following attributes or
+sub-elements:
+
+  :id:
+    A unique integer identifier of the universe.
+
+  :filename:
+    Path to the mesh file, absolute or relative to the input files.
+
+  :boundary:
+    Boundary condition of the boundary faces of the mesh that are not in a
+    boundary set listed in a ``<boundary>`` sub-element: "vacuum",
+    "reflective" or "transmission".
+
+    *Default*: vacuum
+
+  :length_multiplier:
+    Factor applied to the node coordinates of the mesh file.
+
+    *Default*: 1.0
+
+  :cell:
+    One sub-element per element block of the mesh, with the attributes ``id``
+    (optional), ``block`` (ID of the element block), ``material`` (one
+    material ID or "void"), ``temperature`` (optional, K) and ``name``
+    (optional). Temperatures and density multipliers can also be set per
+    element through :class:`openmc.lib.MeshUniverse`.
+
+  :boundary:
+    Sub-elements with the attributes ``set`` (ID of a side set of the mesh)
+    and ``type`` (boundary condition of its faces).
+
+A mesh universe must currently be the root universe, with a boundary
+condition on all of its boundary faces.
+
+  .. code-block:: xml
+
+      <geometry>
+        <mesh_universe id="1" filename="core.h5" boundary="vacuum">
+          <cell id="1" block="1" material="1" temperature="600" />
+          <cell id="2" block="2" material="2" />
+          <boundary set="101" type="reflective" />
+        </mesh_universe>
+      </geometry>

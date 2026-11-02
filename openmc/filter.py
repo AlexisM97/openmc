@@ -27,7 +27,7 @@ _FILTER_TYPES = (
     'delayedgroup', 'energyfunction', 'cellfrom', 'materialfrom', 'legendre',
     'spatiallegendre', 'sphericalharmonics', 'zernike', 'zernikeradial', 'particle',
     'particleproduction', 'cellinstance', 'collision', 'time', 'parentnuclide',
-    'weight', 'meshborn', 'meshsurface', 'meshmaterial', 'reaction',
+    'weight', 'meshborn', 'meshsurface', 'meshmaterial', 'reaction', 'element',
 )
 
 def _mesh_current_names(mesh):
@@ -2094,6 +2094,67 @@ def _path_to_levels(path):
         path_items.insert(i, ('lattice', lat_id, lat_xyz))
 
     return path_items
+
+
+class ElementFilter(Filter):
+    """Bins tally events by the element of a mesh universe in which they
+    occur (in the order of the elements of the mesh file). Track lengths are
+    exact since tracks end on the faces of the elements.
+
+    Parameters
+    ----------
+    universe : openmc.MeshUniverse or Integral
+        The mesh universe, or its ID
+    filter_id : int
+        Unique identifier for the filter
+
+    Attributes
+    ----------
+    bins : Iterable of Integral
+        An iterable with one element: the ID of the mesh universe
+    id : int
+        Unique identifier for the filter
+    num_bins : int
+        The number of filter bins (elements); known after a statepoint is read
+
+    """
+
+    def __init__(self, universe, filter_id=None):
+        super().__init__(universe, filter_id)
+
+    @classmethod
+    def from_hdf5(cls, group, **kwargs):
+        filter_id = int(group.name.split('/')[-1].lstrip('filter '))
+        out = cls(int(group['bins'][()]), filter_id=filter_id)
+        out._num_bins = group['n_bins'][()]
+        return out
+
+    @property
+    def num_bins(self):
+        return self._num_bins
+
+    @Filter.bins.setter
+    def bins(self, bins):
+        bins = np.atleast_1d(bins)
+        if len(bins) != 1:
+            raise ValueError('An ElementFilter takes one mesh universe.')
+        cv.check_type('element filter universe', bins[0],
+                      (Integral, openmc.MeshUniverse))
+        if isinstance(bins[0], openmc.MeshUniverse):
+            bins = np.atleast_1d(bins[0].id)
+        self._bins = bins
+
+    def can_merge(self, other):
+        return False
+
+    def get_bin_index(self, filter_bin):
+        return filter_bin
+
+    def get_pandas_dataframe(self, data_size, stride, **kwargs):
+        import pandas as pd
+        filter_bins = np.repeat(np.arange(self.num_bins), stride)
+        filter_bins = np.tile(filter_bins, data_size // filter_bins.size)
+        return pd.DataFrame({'element': filter_bins})
 
 
 class DistribcellFilter(Filter):

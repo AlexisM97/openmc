@@ -70,6 +70,7 @@ Classes
    CylindricalMesh
    DelayedGroupFilter
    DistribcellFilter
+   ElementFilter
    EnergyFilter
    EnergyFunctionFilter
    EnergyoutFilter
@@ -82,6 +83,7 @@ Classes
    MeshFilter
    MeshBornFilter
    MeshSurfaceFilter
+   MeshUniverse
    MuFilter
    Nuclide
    ParentNuclideFilter

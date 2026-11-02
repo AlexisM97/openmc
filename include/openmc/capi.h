@@ -54,6 +54,16 @@ int openmc_cell_set_name(int32_t index, const char* name);
 int openmc_cell_set_fill(
   int32_t index, int type, int32_t n, const int32_t* indices);
 int openmc_cell_set_id(int32_t index, int32_t id);
+int openmc_mesh_universe_get_n_elements(int32_t id, int32_t* n);
+int openmc_mesh_universe_get_blocks(int32_t id, int32_t* block_ids, int32_t n);
+int openmc_mesh_universe_get_volumes(int32_t id, double* volumes, int32_t n);
+int openmc_mesh_universe_get_temperatures(int32_t id, double* T, int32_t n);
+int openmc_mesh_universe_set_temperatures(
+  int32_t id, const double* T, int32_t n);
+int openmc_mesh_universe_get_density_mults(
+  int32_t id, double* mult, int32_t n);
+int openmc_mesh_universe_set_density_mults(
+  int32_t id, const double* mult, int32_t n);
 int openmc_cell_set_temperature(
   int32_t index, double T, const int32_t* instance, bool set_contained = false);
 int openmc_cell_set_density(int32_t index, double rho, const int32_t* instance,

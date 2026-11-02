@@ -94,9 +94,21 @@ Building geometry
    openmc.Cell
    openmc.Universe
    openmc.DAGMCUniverse
+   openmc.MeshUniverse
+   openmc.MeshCell
    openmc.RectLattice
    openmc.HexLattice
    openmc.Geometry
+
+Mesh universes are made from Exodus meshes with:
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+   :template: myfunction.rst
+
+   openmc.exodus_to_mesh_file
+   openmc.mesh_universe.write_mesh_file
 
 Many of the above classes are derived from several abstract classes:
 
@@ -141,6 +153,7 @@ Constructing Tallies
    openmc.PolarFilter
    openmc.AzimuthalFilter
    openmc.DistribcellFilter
+   openmc.ElementFilter
    openmc.DelayedGroupFilter
    openmc.EnergyFunctionFilter
    openmc.LegendreFilter
