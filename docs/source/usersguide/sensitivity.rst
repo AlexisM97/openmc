@@ -333,7 +333,8 @@ Limitations
   not supported, so the uncertainty due to angular distribution covariances
   (MF34) is not included.
 - The method cannot be used in multigroup mode, in fixed source calculations,
-  with a shared secondary bank, or with NCrystal materials.
+  with survival biasing, with a shared secondary bank, or with NCrystal
+  materials.
 
 .. only:: html
 

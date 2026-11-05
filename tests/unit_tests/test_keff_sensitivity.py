@@ -120,7 +120,7 @@ def test_manual_tallies(run_in_tmpdir, model):
 
 
 @pytest.mark.parametrize("case", ["fixed source", "extra filter", "nuclides",
-                                  "extra score"])
+                                  "extra score", "survival biasing"])
 def test_exceptions(run_in_tmpdir, model, case):
     sens_filter = openmc.SensitivityFilter('U235', ['fission'], ENERGIES)
     tally = openmc.Tally()
@@ -135,6 +135,8 @@ def test_exceptions(run_in_tmpdir, model, case):
         tally.nuclides = ['U235']
     elif case == "extra score":
         tally.scores.append('flux')
+    elif case == "survival biasing":
+        model.settings.survival_biasing = True
     model.tallies = [tally]
 
     with pytest.raises(RuntimeError):

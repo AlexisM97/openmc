@@ -293,6 +293,13 @@ void check_sensitivity_settings()
     fatal_error("Sensitivity coefficients cannot be calculated with a shared "
                 "secondary bank.");
   }
+  // With implicit capture, absorption does not end a history, so real
+  // collisions record no capture or fission event while pseudo-collisions
+  // still sample them
+  if (settings::survival_biasing) {
+    fatal_error("Sensitivity coefficients cannot be calculated with survival "
+                "biasing.");
+  }
   for (const auto& mat : model::materials) {
     if (mat->ncrystal_mat()) {
       fatal_error(fmt::format("Sensitivity coefficients cannot be calculated "
